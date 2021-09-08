@@ -1,0 +1,42 @@
+ACTION_MEANING = {
+    0: "NOOP",
+    1: "FIRE",
+    2: "UP",
+    3: "RIGHT",
+    4: "LEFT",
+    5: "DOWN",
+    6: "UPRIGHT",
+    7: "UPLEFT",
+    8: "DOWNRIGHT",
+    9: "DOWNLEFT",
+    10: "UPFIRE",
+    11: "RIGHTFIRE",
+    12: "LEFTFIRE",
+    13: "DOWNFIRE",
+    14: "UPRIGHTFIRE",
+    15: "UPLEFTFIRE",
+    16: "DOWNRIGHTFIRE",
+    17: "DOWNLEFTFIRE",
+}
+
+
+# W, S, A, D, F as directions, I,K as angle_fires
+KEYBOARD_MAP = {
+     'n': 0,
+     'f': 1,
+     'w': 2,
+     'd': 3,
+     'a': 4,
+     's': 5,
+     'e': 6,
+     'q': 7,
+     'c': 8,
+     'z': 9,
+     'i': 10,
+     'l': 11,
+     'j': 12,
+     'k': 13,
+     'o': 14,
+     'u': 15,
+     ',': 16,
+     'm': 17}
