@@ -18,7 +18,8 @@ class HumanAtariAgent(object):
     def __init__(self):
         self.name = 'human'
 
-    async def step(self, obs_seq, la):
+    async def step(self, state: dict):
+        la = state['legal_actions']
         act = self.keyboard_act()
         if act in la:
             return act
