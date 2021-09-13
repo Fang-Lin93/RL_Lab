@@ -1,24 +1,34 @@
+
 import gym
+import sys
 from matplotlib import pyplot as plt
 from loguru import logger
 from agents.dqn import DQNAgent
+logger.remove()
+logger.add(sys.stderr, level='INFO')
+
 
 N_epochs = 10
+buffer_size = 10000
 eps_greedy = 0.1
 gamma = 0.9
-batch_size = 128
+batch_size = 64
 max_grad_norm = 40
+render_mode = 'rgb_array'  # 'rgb_array'  # 'human'
 game = 'SpaceInvaders-v0'
+target_type = 'MC'
 
 
 def main():
-    env = gym.make('SpaceInvaders-v0')
+    env = gym.make(game)
     agent = DQNAgent(n_act=env.action_space.n,
                      training=True,
                      eps_greedy=eps_greedy,
                      gamma=gamma,
                      batch_size=batch_size,
-                     max_grad_norm=max_grad_norm)
+                     buffer_size=buffer_size,
+                     max_grad_norm=max_grad_norm,
+                     target_type=target_type)
     score_recorder = []
     for epoch in range(N_epochs):
         logger.info(f'Epoch={epoch}')
@@ -34,7 +44,7 @@ def main():
         action = None
 
         while True:
-            env.render()
+            env.render(render_mode)
             if frame == 4:
                 action = agent.step(state_dict)
                 frame = 0
@@ -61,16 +71,20 @@ def main():
 
         agent.process_trajectory()
         agent.train_loop()
+        agent.policy_model.save_model(f'{game}_v0')
 
-    agent.model.save_model(f'{game}_v0')
     plt.plot(score_recorder, label='score')
+    plt.savefig('res.png')
     plt.show()
     return
 
 
 if __name__ == '__main__':
-    import sys
+    # import argparse
+    # parser = argparse.ArgumentParser(description='DQN')
+    #
+    # # Save & Game config
+    # parser.add_argument('--train_device', default='cuda:0', type=str,
+    #                     help='Device for training (default: cuda:0)')
 
-    logger.remove()
-    logger.add(sys.stderr, level='INFO')
     main()

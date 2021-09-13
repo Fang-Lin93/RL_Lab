@@ -1,4 +1,3 @@
-
 import random
 from abc import ABC
 
@@ -20,14 +19,17 @@ class ReplayBuffer(object):
         self.capacity = capacity
         self.data = []
 
-    def add(self, o, h, c, a, r, no, nh, nc):  # (s, a, r, ns) or (o_t, h_t-1, ...)
+    def add(self, *args):  # (s, a, r, ns) or (o, h, c, a, r, no, nh, nc) or (o, h, c, a, r)
         """Save a transition"""
-        self.data.append((o, h, c, a, r, no, nh, nc))
+        self.data.append(args)
         if len(self.data) > self.capacity:
             self.data.pop(0)
 
     def sample(self, batch_size):
-        return random.sample(self.data, batch_size)
+        random.shuffle(self.data)
+        sample = self.data[:batch_size]
+        self.data = self.data[batch_size:]
+        return sample
 
     def __len__(self):
         return len(self.data)
@@ -43,6 +45,7 @@ class CNN_Act(nn.Module):
     (N, C, H, W)
     with h_t <- (o_t, h_t-1)
     """
+
     def __init__(self, n_act: int, input_size: tuple = (3, 210, 160), hidden_size: int = 128):
         super(CNN_Act, self).__init__()
         self.in_c, self.height, self.width = input_size
@@ -74,7 +77,7 @@ class CNN_Act(nn.Module):
         single playing: N=1, L = len(history_frames), C, H, W = (3, 210, 160), lens_idx = [len(history_frames)-1]
         """
         if lens_idx is None:
-            lens_idx = [obs_.size(1)-1] * obs_.size(0)
+            lens_idx = [obs_.size(1) - 1] * obs_.size(0)
 
         lstm_out, hidden_s = self.update_obs(obs_, hidden_state)
 
@@ -88,12 +91,15 @@ class CNN_Act(nn.Module):
         return lstm_out, hidden_s
 
     def train_loop(self, data: tuple, device_=device):
-        data = [_.to(device_) for _ in data]
-        o_, h_, c_, a_, r_, no_, nh_, oc_ = data
-        h_, c_, nh_, oc_ = h_.unsqueeze(0), c_.unsqueeze(0), nh_.unsqueeze(0), oc_.unsqueeze(0)
-        pred_q, _ = self(o_, hidden_state=(h_, c_))
+        o_, h_, c_, a_, r_ = data
+        # o_, h_, c_, a_, r_, no_, nh_, oc_ = data
+        # o_, h_, c_, a_, r_, no_, nh_, oc_ = o_.to(device_), h_.to(device_), c_.to(device_), a_.to(device_), \
+        #                                     r_.to(device_), no_.to(device_), nh_.to(device_), oc_.to(device_)
+        # h_, c_, nh_, oc_ = h_.unsqueeze(0), c_.unsqueeze(0), nh_.unsqueeze(0), oc_.unsqueeze(0)
+        h_, c_ = h_.unsqueeze(0), c_.unsqueeze(0)
+        pred_q, _ = self(o_.to(device_), hidden_state=(h_.to(device_), c_.to(device_)))
         pred_q = pred_q[range(pred_q.size(0)), a_]
-        loss = self.loss_function(pred_q, r_)
+        loss = self.loss_function(pred_q, r_.to(device_))
         return loss
 
     @staticmethod
@@ -119,15 +125,20 @@ class DQNAgent(object):
     TD: TD-target
     MC: MC-target
     """
+
     def __init__(self, n_act: int, model_file='v0', pre_train=False, eps_greedy: float = -1, training=False,
                  target_type: str = 'TD', **kwargs):
         self.name = 'dqn'
         self.a_act = n_act
         self.eps_greedy = eps_greedy
-        self.model = CNN_Act(n_act)
+
+        self.policy_model = CNN_Act(n_act).to(device)
+        self.target_model = CNN_Act(n_act).to(device)
+        self.target_model.load_state_dict(self.policy_model.state_dict())
+
         self.target_type = target_type
         self.training = training
-        self.rb = ReplayBuffer()
+        self.rb = ReplayBuffer(capacity=kwargs.get('buffer_size', 10000))
 
         self.batch_size = kwargs.get('batch_size', 256)
         self.gamma = kwargs.get('gamma', 0.9)
@@ -137,7 +148,7 @@ class DQNAgent(object):
         self.trajectory = []  # (s, a, r, s') or (o, h, c, a ,r ,n_o ,n_h, n_c)
 
         if pre_train:
-            self.model.load_model(model_file)
+            self.policy_model.load_model(model_file)
 
     def reset(self):
         self.hidden_s = None
@@ -150,9 +161,7 @@ class DQNAgent(object):
 
         # save trajectories
         if self.training:
-            if self.trajectory:
-                if self.target_type == 'TD':
-                    r = r + self.gamma*max_q
+            if self.trajectory:  # r + gamma * max[Q(s', a')]
                 self.trajectory += [r, o.squeeze(0), *(_.view(-1) for _ in self.hidden_s)]
                 if not state['done']:
                     self.trajectory += [a]
@@ -166,29 +175,30 @@ class DQNAgent(object):
         # eps-greedy
         obs_tensor = self.process_obs(obs_)
 
-        self.model.eval()
+        self.policy_model.eval()
         with torch.no_grad():
-            pred_q, self.hidden_s = self.model(obs_tensor, hidden_state=self.hidden_s)
+            pred_q, self.hidden_s = self.policy_model(obs_tensor.to(device), hidden_state=self.hidden_s)
 
             if self.eps_greedy > 0 and random.random() < self.eps_greedy:
                 action_ = random.choice(la)
             else:
                 action_ = pred_q.view(-1).argmax().item()
 
-            return obs_tensor, action_,  pred_q.max().item()  # max part of Q-target
+            return obs_tensor.cpu(), action_, pred_q.max().cpu().item()  # max part of Q-target
 
     def process_trajectory(self):
         """
         If Q-MC, using MC-target, otherwise using TD target
         """
         v = 0
-        for i in range(len(self.trajectory)-4, 0, -5):
+        for i in range(len(self.trajectory) - 4, 0, -5):
             if self.target_type == 'MC':
                 r = self.trajectory[i]
                 self.trajectory[i] = r + self.gamma * v  # reward = current + future
                 v = r + self.gamma * v
+                self.rb.add(*self.trajectory[i - 4:i + 1])
             else:
-                self.rb.add(*self.trajectory[i-4:i+4])
+                self.rb.add(*self.trajectory[i - 4:i + 4])
 
         self.reset()
 
@@ -210,19 +220,19 @@ class DQNAgent(object):
         if len(self.rb) < self.batch_size:
             return
 
-        self.model.train()
-        opt = torch.optim.RMSprop(self.model.parameters(), lr=0.001, eps=1e-5)
+        self.policy_model.train()
+        opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=0.001, eps=1e-5)
         data = self.sample_data()
         logger.info(f'====== Train Q net ======')
 
-        loss = self.model.train_loop(data)
+        loss = self.policy_model.train_loop(data, device_=device)
         opt.zero_grad()
         loss.backward()
-        clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+        clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
         opt.step()
 
         logger.info(f'Loss: {loss:.6f}')
-        self.model.eval()
+        self.policy_model.eval()
 
     @staticmethod
     def process_obs(obs: list) -> torch.FloatTensor:
@@ -231,11 +241,12 @@ class DQNAgent(object):
         """
         obs_tensor = torch.FloatTensor([o_.transpose(2, 0, 1) for o_ in obs]).unsqueeze(0)
 
-        return obs_tensor/255.
+        return obs_tensor / 255.
 
 
 if __name__ == '__main__':
     import gym
+
     env = gym.make('SpaceInvaders-v0')
     agent = DQNAgent(n_act=6, training=True, eps_greedy=0.1)
 
@@ -269,15 +280,3 @@ if __name__ == '__main__':
             agent.step(state_dict)
             logger.info("Episode finished after {} timesteps".format(t + 1))
             break
-
-
-
-
-
-
-
-
-
-
-
-
