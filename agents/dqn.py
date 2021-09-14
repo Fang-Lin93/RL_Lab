@@ -5,7 +5,7 @@ import torch
 from loguru import logger
 from torch.nn import functional as F
 from torch.nn.utils import clip_grad_norm_
-from torch import nn
+from torch import nn, FloatTensor, LongTensor
 
 """
 it uses LSTM to extract hidden states
@@ -96,7 +96,7 @@ class CNN_Act(nn.Module):
         # o_, h_, c_, a_, r_, no_, nh_, oc_ = o_.to(device_), h_.to(device_), c_.to(device_), a_.to(device_), \
         #                                     r_.to(device_), no_.to(device_), nh_.to(device_), oc_.to(device_)
         # h_, c_, nh_, oc_ = h_.unsqueeze(0), c_.unsqueeze(0), nh_.unsqueeze(0), oc_.unsqueeze(0)
-        h_, c_ = h_.unsqueeze(0), c_.unsqueeze(0)
+        # h_, c_ = h_.unsqueeze(0), c_.unsqueeze(0)
         pred_q, _ = self(o_.to(device_), hidden_state=(h_.to(device_), c_.to(device_)))
         pred_q = pred_q[range(pred_q.size(0)), a_]
         loss = self.loss_function(pred_q, r_.to(device_))
@@ -133,11 +133,14 @@ class DQNAgent(object):
         self.eps_greedy = eps_greedy
 
         self.policy_model = CNN_Act(n_act).to(device)
-        self.target_model = CNN_Act(n_act).to(device)
-        self.target_model.load_state_dict(self.policy_model.state_dict())
+        self.target_model = None
+        self.training = training
+
+        if training:
+            self.target_model = CNN_Act(n_act).to(device)
+        self.sync_model()
 
         self.target_type = target_type
-        self.training = training
         self.rb = ReplayBuffer(capacity=kwargs.get('buffer_size', 10000))
 
         self.batch_size = kwargs.get('batch_size', 256)
@@ -190,29 +193,42 @@ class DQNAgent(object):
         """
         If Q-MC, using MC-target, otherwise using TD target
         """
-        v = 0
-        for i in range(len(self.trajectory) - 4, 0, -5):
-            if self.target_type == 'MC':
-                r = self.trajectory[i]
-                self.trajectory[i] = r + self.gamma * v  # reward = current + future
-                v = r + self.gamma * v
-                self.rb.add(*self.trajectory[i - 4:i + 1])
-            else:
-                self.rb.add(*self.trajectory[i - 4:i + 4])
+        if self.trajectory:
+            v = 0
+            for i in range(len(self.trajectory) - 4, 0, -5):
+                if self.target_type == 'MC':
+                    r = self.trajectory[i]
+                    self.trajectory[i] = r + self.gamma * v  # reward = current + future
+                    v = r + self.gamma * v
+                    self.rb.add(*self.trajectory[i - 4:i + 1])
+                else:  # TD error
+                    self.rb.add(*self.trajectory[i - 4:i + 4])
 
         self.reset()
 
-    def sample_data(self):
-        sample = self.rb.sample(self.batch_size)
-        data = []
-        for item in zip(*sample):
-            if isinstance(item[0], int):
-                data.append(torch.LongTensor(item))
-            elif isinstance(item[0], float):
-                data.append(torch.FloatTensor(item))
+    def sample_data(self) -> tuple:
+        """
+        mc: (o, h, c, a, r*)
+        td: (o, h, c, a, r, no, nh, nc)
+        """
+        self.policy_model.eval()
+        with torch.no_grad():
+            sample = self.rb.sample(self.batch_size)
+            if self.target_type == 'TD':
+                o, h, c, a, r, no, nh, nc = zip(*sample)
+                o, h, c = torch.stack(o), torch.stack(h).unsqueeze(0), torch.stack(c).unsqueeze(0)
+                a, r = LongTensor(a), FloatTensor(r)
+                no, nh, nc = torch.stack(no), torch.stack(nh).unsqueeze(0), torch.stack(nc).unsqueeze(0)
+                pred_q, _ = self.policy_model(no.to(device), (nh.to(device), nc.to(device)))
+                r += self.gamma*pred_q.max(dim=1).values.cpu()
+                return o, h, c, a, r
+
+            elif self.target_type == 'MC':
+                o, h, c, a, r = zip(*sample)
+                return torch.stack(o), torch.stack(h).unsqueeze(0), torch.stack(c).unsqueeze(0), \
+                    LongTensor(a), FloatTensor(r)
             else:
-                data.append(torch.stack(item))
-        return tuple(data)
+                raise ValueError(f'{self.target_type} is not accepted, acceptable types are in ["MC", "TD"]')
 
     def train_loop(self):
         self.process_trajectory()
@@ -220,19 +236,27 @@ class DQNAgent(object):
         if len(self.rb) < self.batch_size:
             return
 
-        self.policy_model.train()
-        opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=0.001, eps=1e-5)
-        data = self.sample_data()
-        logger.info(f'====== Train Q net ======')
+        self.target_model.train()
 
-        loss = self.policy_model.train_loop(data, device_=device)
+        opt = torch.optim.RMSprop(self.target_model.parameters(), lr=0.001, eps=1e-5)
+
+        data = self.sample_data()
+
+        logger.info(f'====== Train Q net using {self.target_type} target ======')
+
+        loss = self.target_model.train_loop(data, device_=device)
         opt.zero_grad()
         loss.backward()
-        clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
+        clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
         opt.step()
 
         logger.info(f'Loss: {loss:.6f}')
-        self.policy_model.eval()
+        self.target_model.eval()
+
+    def sync_model(self):
+        if not self.target_model:
+            return
+        self.policy_model.load_state_dict(self.target_model.state_dict())
 
     @staticmethod
     def process_obs(obs: list) -> torch.FloatTensor:
@@ -251,18 +275,20 @@ if __name__ == '__main__':
     agent = DQNAgent(n_act=6, training=True, eps_greedy=0.1)
 
     obs = env.reset()
+    agent.reset()
     state_dict = {
         'obs': [obs],
         'la': list(range(env.action_space.n)),
         'reward': None,
         'done': False,
     }
-    t, f, action = 0, 4, None
+    t, score, frame = 0, 0, 4
+    action = None
     while True:
         env.render()
-        if f == 4:
+        if frame == 4:
             action = agent.step(state_dict)
-            f = 0
+            frame = 0
 
         obs, reward, done, info = env.step(action)
         state_dict = {
@@ -274,9 +300,10 @@ if __name__ == '__main__':
 
         logger.debug(f'Action={action}, R_t+1={reward}')
         t += 1
-        f += 1
+        frame += 1
+        score += reward
         if done or t > 1000:
             state_dict['done'] = True
             agent.step(state_dict)
-            logger.info("Episode finished after {} timesteps".format(t + 1))
+            logger.info(f"Episode finished after {t} time steps, total reward={score}")
             break

@@ -14,9 +14,9 @@ eps_greedy = 0.1
 gamma = 0.9
 batch_size = 64
 max_grad_norm = 40
-render_mode = 'rgb_array'  # 'rgb_array'  # 'human'
+render_mode = 'human'  # 'rgb_array'  # 'human'
 game = 'SpaceInvaders-v0'
-target_type = 'MC'
+target_type = 'TD'
 
 
 def main():
@@ -70,7 +70,10 @@ def main():
         score_recorder.append(score)
 
         agent.process_trajectory()
+
         agent.train_loop()
+        agent.sync_model()
+
         agent.policy_model.save_model(f'{game}_v0')
 
     plt.plot(score_recorder, label='score')
