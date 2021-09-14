@@ -19,17 +19,20 @@ class ReplayBuffer(object):
         self.capacity = capacity
         self.data = []
 
-    def add(self, *args):  # (s, a, r, ns) or (o, h, c, a, r, no, nh, nc) or (o, h, c, a, r)
+    def add(self, o, a, r, n_o):  # (s, a, r, ns) or (o, h, c, a, r, no, nh, nc) or (o, h, c, a, r)
         """Save a transition"""
-        self.data.append(args)
+        self.data.append((o, a, r, n_o))
         if len(self.data) > self.capacity:
             self.data.pop(0)
 
     def sample(self, batch_size):
-        random.shuffle(self.data)
-        sample = self.data[:batch_size]
-        self.data = self.data[batch_size:]
-        return sample
+        return random.sample(self.data, batch_size)
+
+    # def sample(self, batch_size):
+    #     random.shuffle(self.data)
+    #     sample = self.data[:batch_size]
+    #     self.data = self.data[batch_size:]
+    #     return sample
 
     def cla(self):
         self.data = []
@@ -40,9 +43,12 @@ class ReplayBuffer(object):
     def is_full(self):
         return len(self.data) >= self.capacity
 
+    def get_all_trajectories(self):
+        return self.data
+
     def dataloader(self, batch_size):
         random.shuffle(self.data)
-        return (self.data[i:i+batch_size] for i in range(0, len(self), batch_size))
+        return (self.data[i:i + batch_size] for i in range(0, len(self), batch_size))
 
 
 class CNN_Act(nn.Module):
@@ -74,45 +80,19 @@ class CNN_Act(nn.Module):
             nn.Linear(hidden_size, n_act)
         )
 
-    def forward(self, obs_, hidden_state=None, lens_idx: list = None):
+    def forward(self, obs_):
         """
         x of size (3, 210, 160) , if (210, 160, 3), try using tensor.permute(2, 0, 1)
         lens_idx = [0, 1,5, 2,...] is the index of outputs for different trajectories (= length_seq - 1)
 
         single playing: N=1, L = len(history_frames), C, H, W = (3, 210, 160), lens_idx = [len(history_frames)-1]
         """
-        if lens_idx is None:
-            lens_idx = [obs_.size(1) - 1] * obs_.size(0)
-
-        lstm_out, hidden_s = self.update_obs(obs_, hidden_state)
-
-        return self.fc(lstm_out[range(obs_.size(0)), lens_idx, :]), hidden_s
-
-    def update_obs(self, obs_, hidden_state):
         N, L, C, H, W = obs_.size()
 
         obs_ = self.cnn(obs_.view(-1, C, H, W))
-        lstm_out, hidden_s = self.rnn(obs_.view(N, L, -1), hidden_state)
-        return lstm_out, hidden_s
+        lstm_out, hidden_s = self.rnn(obs_.view(N, L, -1))
 
-    def train_loop(self, data: tuple, device_=device):
-        o_, h_, c_, a_, r_ = data
-        # o_, h_, c_, a_, r_, no_, nh_, oc_ = data
-        # o_, h_, c_, a_, r_, no_, nh_, oc_ = o_.to(device_), h_.to(device_), c_.to(device_), a_.to(device_), \
-        #                                     r_.to(device_), no_.to(device_), nh_.to(device_), oc_.to(device_)
-        # h_, c_, nh_, oc_ = h_.unsqueeze(0), c_.unsqueeze(0), nh_.unsqueeze(0), oc_.unsqueeze(0)
-        # h_, c_ = h_.unsqueeze(0), c_.unsqueeze(0)
-        pred_q, _ = self(o_.to(device_), hidden_state=(h_.to(device_), c_.to(device_)))
-        pred_q = pred_q[range(pred_q.size(0)), a_]
-        loss = self.loss_function(pred_q, r_.to(device_))
-        return loss
-
-    @staticmethod
-    def loss_function(pred_q, target_q):
-        """
-        MSE for q-value -> final_payoff
-        """
-        return F.mse_loss(pred_q, target_q)
+        return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
 
     def save_model(self, model_file='v1', path='models/'):
         torch.save(self.state_dict(), f'{path}dqn_{model_file}.pth')
@@ -137,25 +117,27 @@ class DQNAgent(object):
         self.a_act = n_act
         self.eps_greedy = eps_greedy
 
-        self.policy_model = CNN_Act(n_act).to(device)
+        self.hidden_size = kwargs.get('hidden_size', 128)
+        self.policy_model = CNN_Act(n_act, hidden_size=self.hidden_size).to(device)
         self.target_model = None
         self.training = training
 
         if training:
-            self.target_model = CNN_Act(n_act).to(device)
+            self.target_model = CNN_Act(n_act, hidden_size=self.hidden_size).to(device)
         self.sync_model()
 
         self.target_type = target_type
         self.rb = ReplayBuffer(capacity=kwargs.get('buffer_size', 10000))
 
-        self.batch_size = kwargs.get('batch_size', 256)
+        self.batch_size = kwargs.get('batch_size', 64)
         self.gamma = kwargs.get('gamma', 0.9)
         self.max_grad_norm = kwargs.get('max_grad_norm', 40)
         self.lr = kwargs.get('lr', 0.0001)
         self.eps = kwargs.get('eps', 1e-5)
+        self.history_len = kwargs.get('history_len', 5)
 
-        self.hidden_s = None
-        self.trajectory = []  # (s, a, r, s') or (o, h, c, a ,r ,n_o ,n_h, n_c)
+        # self.hidden_s = None
+        self.trajectory = []  # (s, a, r, s') or (o, h, c, a ,r ,n_o ,n_h, n_c) // (o, a, r, no)
 
         if pre_train:
             self.policy_model.load_model(model_file)
@@ -163,22 +145,22 @@ class DQNAgent(object):
     def reset(self):
         self.process_trajectory()
         self.trajectory = []
-        self.hidden_s = None
+        # self.hidden_s = None
 
     def step(self, state: dict):
-
         obs_, la, r = state['obs'], state['la'], state['reward']
-        o, a, max_q = self.act(obs_, la)
+        o, a = self.act(obs_, la)
 
         # save trajectories
         if self.training:
             if self.trajectory:  # r + gamma * max[Q(s', a')]
-                self.trajectory += [r, o.squeeze(0), *(_.view(-1) for _ in self.hidden_s)]
+                # self.trajectory += [r, o.squeeze(0), *(_.view(-1) for _ in self.hidden_s)]
+                self.trajectory += [r, o.squeeze(0)]
                 if not state['done']:
                     self.trajectory += [a]
             else:  # initial
-                self.trajectory = [o.squeeze(0), *(_.view(-1) for _ in self.hidden_s), a]
-
+                # self.trajectory = [o.squeeze(0), *(_.view(-1) for _ in self.hidden_s), a]
+                self.trajectory = [o.squeeze(0), a]
         return a
 
     def act(self, obs_: list, la: list):
@@ -188,55 +170,43 @@ class DQNAgent(object):
 
         self.policy_model.eval()
         with torch.no_grad():
-            pred_q, self.hidden_s = self.policy_model(obs_tensor.to(device), hidden_state=self.hidden_s)
+            pred_q = self.policy_model(obs_tensor.to(device))
+            logger.debug(pred_q)
 
             if self.eps_greedy > 0 and random.random() < self.eps_greedy:
                 action_ = random.choice(la)
             else:
                 action_ = pred_q.view(-1).argmax().item()
 
-            return obs_tensor.cpu(), action_, pred_q.max().cpu().item()  # max part of Q-target
+            return obs_tensor.cpu(), action_  # max part of Q-target
 
-    def process_trajectory(self):
+    def process_trajectory(self, final_payoff: float = 0):
         """
         If Q-MC, using MC-target, otherwise using TD target
+
+        if LSTM -> a trajectory = a batch
+        I can update the paras in the final stage (use total loss)
         """
         if self.trajectory:
-            v = 0
-            for i in range(len(self.trajectory) - 4, 0, -5):
+            v = final_payoff
+            # o, a, r, n_o = [], [], [], []
+            for i in range(len(self.trajectory) - 2, 0, -3):
                 if self.target_type == 'MC':
                     r = self.trajectory[i]
                     self.trajectory[i] = r + self.gamma * v  # reward = current + future
                     v = r + self.gamma * v
-                    self.rb.add(*self.trajectory[i - 4:i + 1])
-                else:  # TD error
-                    self.rb.add(*self.trajectory[i - 4:i + 4])
+
+                self.rb.add(o=self.trajectory[i - 2],
+                            a=self.trajectory[i - 1],
+                            r=self.trajectory[i],
+                            n_o=self.trajectory[i + 1])  # o, n_o -> torch.stack
+
         return
 
-    def sample2tensor(self, sample) -> tuple:
-        """
-        mc: (o, h, c, a, r*)
-        td: (o, h, c, a, r, no, nh, nc)
-        """
-        self.policy_model.eval()
-        with torch.no_grad():
-            if self.target_type == 'TD':
-                o, h, c, a, r, no, nh, nc = zip(*sample)
-                o, h, c = torch.stack(o), torch.stack(h).unsqueeze(0), torch.stack(c).unsqueeze(0)
-                a, r = LongTensor(a), FloatTensor(r)
-                no, nh, nc = torch.stack(no), torch.stack(nh).unsqueeze(0), torch.stack(nc).unsqueeze(0)
-                pred_q, _ = self.policy_model(no.to(device), (nh.to(device), nc.to(device)))
-                r += self.gamma*pred_q.max(dim=1).values.cpu()
-                return o, h, c, a, r
-
-            elif self.target_type == 'MC':
-                o, h, c, a, r = zip(*sample)
-                return torch.stack(o), torch.stack(h).unsqueeze(0), torch.stack(c).unsqueeze(0), \
-                    LongTensor(a), FloatTensor(r)
-            else:
-                raise ValueError(f'{self.target_type} is not accepted, acceptable types are in ["MC", "TD"]')
-
     def train_loop(self):
+        """
+        train target model
+        """
         self.process_trajectory()
 
         if len(self.rb) < self.batch_size:
@@ -246,14 +216,26 @@ class DQNAgent(object):
 
         opt = torch.optim.RMSprop(self.target_model.parameters(), lr=self.lr, eps=self.eps)
 
-        logger.info(f'====== Train Q net using {self.target_type} target (obs={len(self.rb)})======') # self.rb.sample()
-        for i, sample in enumerate(self.rb.dataloader(self.batch_size)):
-            loss = self.target_model.train_loop(self.sample2tensor(sample), device_=device)
-            opt.zero_grad()
-            loss.backward()
-            clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
-            opt.step()
-            logger.info(f'Loss(batch {i})={loss:.6f}')
+        logger.info(   # self.rb.sample()
+            f'====== Train Q net using {self.target_type} target (obs={len(self.rb)}) episodes ======')
+
+        sample = self.rb.sample(self.batch_size)
+        o, a, r, n_o = zip(*sample)
+        o, a, r, n_o = torch.stack(o), LongTensor(a), FloatTensor(r), torch.stack(n_o)
+
+        q_ = self.target_model(n_o.to(device))
+        if self.target_type == 'TD':
+            # get the td target first
+            r += q_.max(dim=1).values.detach().cpu()
+
+        loss = F.mse_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
+
+        opt.zero_grad()
+        loss.backward()
+        clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
+        opt.step()
+
+        logger.info(f'Loss = {loss.item():.6f}')
         self.target_model.eval()
 
     def sync_model(self):
@@ -261,41 +243,65 @@ class DQNAgent(object):
             return
         self.policy_model.load_state_dict(self.target_model.state_dict())
 
-    @staticmethod
-    def process_obs(obs: list) -> torch.FloatTensor:
+    def process_obs(self, obs_: list) -> torch.FloatTensor:
         """
         normalize RGB
+        give size of (1, L, C, H, W)
+        pad zeros at the beginning
+        it contains most recent self.history_len frames
         """
-        obs_tensor = torch.FloatTensor([o_.transpose(2, 0, 1) for o_ in obs]).unsqueeze(0)
+        assert len(obs_) <= self.history_len
 
-        return obs_tensor / 255.
+        obs_ = [torch.FloatTensor(o_.transpose(2, 0, 1)) for o_ in obs_]
+        obs_tensor = torch.zeros((self.history_len, *obs_[0].shape))
+        obs_tensor[-len(obs_):] = torch.stack(obs_)
+        return obs_tensor.unsqueeze(0) / 255.
+
+    # @staticmethod
+    # def process_obs(obs_: list) -> torch.FloatTensor:
+    #     """
+    #     normalize RGB
+    #     give size of (L, C, H, W)
+    #     pad zeros at the beginning
+    #     """
+    #     # obs_tensor = torch.FloatTensor([o_.transpose(2, 0, 1) for o_ in obs_]).unsqueeze(0)
+    #     obs_tensor = torch.stack([torch.FloatTensor(o_.transpose(2, 0, 1)) for o_ in obs_])
+    #
+    #     return obs_tensor / 255.
 
 
 if __name__ == '__main__':
     import gym
 
     env = gym.make('SpaceInvaders-v0')
-    agent = DQNAgent(n_act=6, training=True, eps_greedy=0.1)
+    # env = gym.make('Breakout-v0')
+    agent = DQNAgent(n_act=env.action_space.n, training=True, eps_greedy=0.1)
 
     obs = env.reset()
     agent.reset()
+    history = [obs]
     state_dict = {
-        'obs': [obs],
+        'obs': history,
         'la': list(range(env.action_space.n)),
         'reward': None,
         'done': False,
     }
-    t, score, frame = 0, 0, 4
+    t, score, frame = 0, 0, 5
     action = None
     while True:
         env.render()
-        if frame == 4:
+        if frame == 5:
             action = agent.step(state_dict)
             frame = 0
 
         obs, reward, done, info = env.step(action)
+
+        history.append(obs)
+        if len(history) > 5:
+            history.pop(0)
+
         state_dict = {
-            'obs': [obs],
+            'obs': history,
             'la': list(range(env.action_space.n)),
             'reward': reward,
             'done': False
