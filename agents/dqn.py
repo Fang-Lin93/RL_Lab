@@ -65,12 +65,16 @@ class CNN_Act(nn.Module):
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=hidden_size, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(self.height, self.width)),  # global max pooling
+            nn.AvgPool2d(kernel_size=(self.height, self.width)),  # global max pooling
             nn.Flatten(),
         )
         self.rnn = nn.LSTM(hidden_size, hidden_size, batch_first=True)
 
         self.fc = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
@@ -191,10 +195,13 @@ class DQNAgent(object):
             v = final_payoff
             # o, a, r, n_o = [], [], [], []
             for i in range(len(self.trajectory) - 2, 0, -3):
-                if self.target_type == 'MC':
-                    r = self.trajectory[i]
-                    self.trajectory[i] = r + self.gamma * v  # reward = current + future
-                    v = r + self.gamma * v
+                if self.target_type == 'MC':  # simply ignore immediate rewards
+                    self.trajectory[i] = v
+                    v *= self.gamma
+
+                    # r = self.trajectory[i]
+                    # self.trajectory[i] = r + self.gamma * v  # reward = current + future
+                    # v = r + self.gamma * v
 
                 self.rb.add(o=self.trajectory[i - 2],
                             a=self.trajectory[i - 1],
@@ -228,9 +235,9 @@ class DQNAgent(object):
             # get the td target first
             r += q_.max(dim=1).values.detach().cpu()
 
-        loss = F.mse_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
-
         opt.zero_grad()
+
+        loss = F.mse_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
         loss.backward()
         clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
         opt.step()
@@ -274,8 +281,12 @@ if __name__ == '__main__':
     import gym
 
     env = gym.make('SpaceInvaders-v0')
+    target = 'MC'
     # env = gym.make('Breakout-v0')
-    agent = DQNAgent(n_act=env.action_space.n, training=True, eps_greedy=0.1)
+    agent = DQNAgent(n_act=env.action_space.n,
+                     training=True,
+                     eps_greedy=0.1,
+                     target_type=target)
 
     obs = env.reset()
     agent.reset()
@@ -286,11 +297,11 @@ if __name__ == '__main__':
         'reward': None,
         'done': False,
     }
-    t, score, frame = 0, 0, 5
+    t, score, frame = 0, 0, 3
     action = None
     while True:
         env.render()
-        if frame == 5:
+        if frame == 3:
             action = agent.step(state_dict)
             frame = 0
 
@@ -316,3 +327,8 @@ if __name__ == '__main__':
             agent.step(state_dict)
             logger.info(f"Episode finished after {t} time steps, total reward={score}")
             break
+
+    if target == 'TD':
+        agent.process_trajectory(final_payoff=reward)
+    if target == 'MC':
+        agent.process_trajectory(final_payoff=score)

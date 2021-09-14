@@ -19,7 +19,7 @@ A normal DQN requires (s, a, r, s'), which cannot use RNN as state represents, o
 
 parser.add_argument('--N_episodes', default=10000, type=int, help='N_episodes (default: 10)')
 parser.add_argument('--max_len', default=1000000, type=int, help='max_len of episodes (default: 1000000)')
-parser.add_argument('--buffer_size', default=1000, type=int, help='buffer_size of traj (default: 10000)')
+parser.add_argument('--buffer_size', default=5000, type=int, help='buffer_size of traj (default: 10000)')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
 parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
 parser.add_argument('--anneal_greedy', default=0.99, type=float, help='eps_greedy')
@@ -31,9 +31,9 @@ parser.add_argument('--max_grad_norm', default=40, type=float, help='max_grad_no
 parser.add_argument('--lr', default=0.0001, type=float, help='learning rate of RMSProp (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 
-parser.add_argument('--target', default='TD', type=str, help='target = TD/MC (default: TD)')
+parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
-parser.add_argument('--train_freq', default=1, type=int, help='train every ? episode (default: 1)')
+parser.add_argument('--train_freq', default=10, type=int, help='train every ? episode (default: 1)')
 parser.add_argument('--frame_freq', default=4, type=int, help='act every ? frame')
 
 parser.add_argument('--history_len', default=5, type=int, help='length of the history used, left zeros')
@@ -116,12 +116,15 @@ def main():
                 break
 
         score_recorder.append(score)
-        agent.process_trajectory(final_payoff=reward)
+        if args.target == 'TD':
+            agent.process_trajectory(final_payoff=reward)
+        if args.target == 'MC':
+            agent.process_trajectory(final_payoff=score)
 
         if episode % args.train_freq == 0:
+            # it may blow up if train too frequently
             agent.train_loop()
             agent.sync_model()
-            agent.rb.cla()
 
         agent.target_model.save_model(f'{args.game}_v0')
 

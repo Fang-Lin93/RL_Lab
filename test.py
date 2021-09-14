@@ -53,4 +53,5 @@ def eva(game: str, max_episode=100000, model_file: str = 'v0'):
 if __name__ == '__main__':
 
     # SpaceInvaders-v0  Breakout-v0
+    # eva(game='SpaceInvaders-v0')
     eva(game='Breakout-v0')
