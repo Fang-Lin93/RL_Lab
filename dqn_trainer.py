@@ -21,15 +21,16 @@ logger.add(sys.stderr, level='INFO')
 # game = 'SpaceInvaders-v0'
 # target = 'TD'
 
-parser.add_argument('--N_epochs', default=10, type=int, help='N_epochs (default: 10)')
+parser.add_argument('--N_episodes', default=1000, type=int, help='N_episodes (default: 10)')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size (default: 10000)')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
 parser.add_argument('--gamma', default=0.9, type=float, help='decay factor (default: 0.9)')
-parser.add_argument('--batch_size', default=256, type=int, help='batch_size (default: 256)')
+parser.add_argument('--batch_size', default=128, type=int, help='batch_size (default: 256)')
 parser.add_argument('--max_grad_norm', default=40, type=float, help='max_grad_norm for clipping grads (default: 40)')
-parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array) (default: "human")')
+parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
 parser.add_argument('--game', default='SpaceInvaders-v0', type=str, help='game env name')
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC (default: TD)')
+parser.add_argument('--train_freq', default=1, type=int, help='train every ? episode (default: 1)')
 
 args = parser.parse_args()
 
@@ -45,8 +46,8 @@ def main():
                      max_grad_norm=args.max_grad_norm,
                      target_type=args.target)
     score_recorder = []
-    for epoch in range(args.N_epochs):
-        logger.info(f'Epoch={epoch}')
+    for episode in range(args.N_episodes):
+        logger.info(f'Epoch={episode}')
         obs = env.reset()
         agent.reset()
         state_dict = {
@@ -86,8 +87,9 @@ def main():
 
         agent.process_trajectory()
 
-        agent.train_loop()
-        agent.sync_model()
+        if episode % args.train_freq == 0:
+            agent.train_loop()
+            agent.sync_model()
 
         agent.policy_model.save_model(f'{args.game}_v0')
 
