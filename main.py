@@ -6,11 +6,11 @@ import asyncio
 from agents.human import HumanAtariAgent
 from agents.rand import RandomAgent
 
-#  MontezumaRevenge-v0  SpaceInvaders-v0
+#  MontezumaRevenge-v0  SpaceInvaders-v0 Breakout-v0
 
 
 async def async_main():
-    env = gym.make('MontezumaRevenge-v0')
+    env = gym.make('Breakout-v0')
     obs = env.reset()  # reset for each new trial
     state = {
         'obs': [obs],
@@ -64,13 +64,11 @@ def main(agent, max_episode=1000):
 
 if __name__ == '__main__':
 
-    # import asyncio
-    # asyncio.run(async_main())
-    # main(agent=RandomAgent())
+    import asyncio
+    asyncio.run(async_main())
 
-    from agents.dqn import DQNAgent
-
-    main(agent=DQNAgent(n_act=6, eps_greedy=0.2))
+    # from agents.dqn import DQNAgent
+    # main(agent=DQNAgent(n_act=6, eps_greedy=0.2))
 
 
 

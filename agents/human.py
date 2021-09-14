@@ -19,7 +19,7 @@ class HumanAtariAgent(object):
         self.name = 'human'
 
     async def step(self, state: dict):
-        la = state['legal_actions']
+        la = state['la']
         act = self.keyboard_act()
         if act in la:
             return act

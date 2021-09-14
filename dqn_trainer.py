@@ -8,32 +8,20 @@ from agents.dqn import DQNAgent
 import argparse
 parser = argparse.ArgumentParser(description='DQN')
 
-logger.remove()
-logger.add(sys.stderr, level='INFO')
-logger.add('DQN_train.log', level='INFO')
-
 """
 using RNN to encode the hidden state requires full trajectories.
 So we cannot simply sample (s, a, r, s') and make TD updates
-here (o, h, c, a, r, no, nh, nc) is given. but 'h, c, nh, nc' is already calculated by the previous model
+here (o, h, c, a, r, no, nh, nc) is given and 'h, c, nh, nc' are already calculated by the previous model
 Once the model is synchronized, the replay buffer should be cleared !
+
+A normal DQN requires (s, a, r, s'), which cannot use RNN as state represents, or you can use 'history' as s
 """
-#
-# N_epochs = 10
-# buffer_size = 10000
-# eps_greedy = 0.1
-# gamma = 0.9
-# batch_size = 64
-# max_grad_norm = 40
-# render = 'human'  # 'rgb_array'  # 'human'
-# game = 'SpaceInvaders-v0'
-# target = 'TD'
 
 parser.add_argument('--N_episodes', default=10000, type=int, help='N_episodes (default: 10)')
 parser.add_argument('--max_len', default=1000000, type=int, help='max_len of episodes (default: 1000000)')
 parser.add_argument('--buffer_size', default=1280, type=int, help='buffer_size (default: 10000)')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
-parser.add_argument('--anneal_greedy', default=0.999, type=float, help='eps_greedy (default: 0.999)')
+parser.add_argument('--anneal_greedy', default=0.99, type=float, help='eps_greedy (default: 0.999)')
 parser.add_argument('--gamma', default=0.9, type=float, help='decay factor (default: 0.9)')
 parser.add_argument('--batch_size', default=128, type=int, help='batch_size')
 parser.add_argument('--max_grad_norm', default=40, type=float, help='max_grad_norm for clipping grads (default: 40)')
@@ -42,9 +30,13 @@ parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (de
 
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC (default: TD)')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
-parser.add_argument('--game', default='SpaceInvaders-v0', type=str, help='game env name')
 parser.add_argument('--train_freq', default=1, type=int, help='train every ? episode (default: 1)')
 parser.add_argument('--frame_freq', default=2, type=int, help='act every ? frame (default: 2)')
+
+parser.add_argument('--game', default='Breakout-v0', type=str, help='game env name')
+
+#  Breakout-v0  SpaceInvaders-v0
+
 
 args = parser.parse_args()
 
@@ -133,5 +125,9 @@ if __name__ == '__main__':
     # # Save & Game config
     # parser.add_argument('--train_device', default='cuda:0', type=str,
     #                     help='Device for training (default: cuda:0)')
+
+    logger.remove()
+    logger.add(sys.stderr, level='INFO')
+    logger.add(f'DQN_{args.game}.log', level='INFO')
 
     main()
