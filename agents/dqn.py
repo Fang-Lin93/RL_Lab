@@ -31,13 +31,18 @@ class ReplayBuffer(object):
         self.data = self.data[batch_size:]
         return sample
 
+    def cla(self):
+        self.data = []
+
     def __len__(self):
         return len(self.data)
 
-    def __get_is_full(self):
+    def is_full(self):
         return len(self.data) >= self.capacity
 
-    is_full = property(__get_is_full)
+    def dataloader(self, batch_size):
+        random.shuffle(self.data)
+        return (self.data[i:i+batch_size] for i in range(0, len(self), batch_size))
 
 
 class CNN_Act(nn.Module):
@@ -146,6 +151,8 @@ class DQNAgent(object):
         self.batch_size = kwargs.get('batch_size', 256)
         self.gamma = kwargs.get('gamma', 0.9)
         self.max_grad_norm = kwargs.get('max_grad_norm', 40)
+        self.lr = kwargs.get('lr', 0.0001)
+        self.eps = kwargs.get('eps', 1e-5)
 
         self.hidden_s = None
         self.trajectory = []  # (s, a, r, s') or (o, h, c, a ,r ,n_o ,n_h, n_c)
@@ -154,8 +161,9 @@ class DQNAgent(object):
             self.policy_model.load_model(model_file)
 
     def reset(self):
-        self.hidden_s = None
+        self.process_trajectory()
         self.trajectory = []
+        self.hidden_s = None
 
     def step(self, state: dict):
 
@@ -203,17 +211,15 @@ class DQNAgent(object):
                     self.rb.add(*self.trajectory[i - 4:i + 1])
                 else:  # TD error
                     self.rb.add(*self.trajectory[i - 4:i + 4])
+        return
 
-        self.reset()
-
-    def sample_data(self) -> tuple:
+    def sample2tensor(self, sample) -> tuple:
         """
         mc: (o, h, c, a, r*)
         td: (o, h, c, a, r, no, nh, nc)
         """
         self.policy_model.eval()
         with torch.no_grad():
-            sample = self.rb.sample(self.batch_size)
             if self.target_type == 'TD':
                 o, h, c, a, r, no, nh, nc = zip(*sample)
                 o, h, c = torch.stack(o), torch.stack(h).unsqueeze(0), torch.stack(c).unsqueeze(0)
@@ -238,19 +244,16 @@ class DQNAgent(object):
 
         self.target_model.train()
 
-        opt = torch.optim.RMSprop(self.target_model.parameters(), lr=0.001, eps=1e-5)
+        opt = torch.optim.RMSprop(self.target_model.parameters(), lr=self.lr, eps=self.eps)
 
-        data = self.sample_data()
-
-        logger.info(f'====== Train Q net using {self.target_type} target ======')
-
-        loss = self.target_model.train_loop(data, device_=device)
-        opt.zero_grad()
-        loss.backward()
-        clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
-        opt.step()
-
-        logger.info(f'Loss: {loss:.6f}')
+        logger.info(f'====== Train Q net using {self.target_type} target (obs={len(self.rb)})======') # self.rb.sample()
+        for i, sample in enumerate(self.rb.dataloader(self.batch_size)):
+            loss = self.target_model.train_loop(self.sample2tensor(sample), device_=device)
+            opt.zero_grad()
+            loss.backward()
+            clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
+            opt.step()
+            logger.info(f'Loss(batch {i})={loss:.6f}')
         self.target_model.eval()
 
     def sync_model(self):
