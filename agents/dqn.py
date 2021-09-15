@@ -4,7 +4,7 @@ from abc import ABC
 import torch
 from loguru import logger
 from torch.nn import functional as F
-from torch.nn.utils import clip_grad_norm_
+from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 from torch import nn, FloatTensor, LongTensor
 
 """
@@ -15,9 +15,9 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 
 class ReplayBuffer(object):
 
-    def __init__(self, capacity: int = 10000, only_once=True):
+    def __init__(self, capacity: int = 10000, only_once=False):
         self.capacity = capacity
-        self.one_shot = only_once
+        self.only_once = only_once
         self.data = []
 
     def add(self, o, a, r, n_o):  # (s, a, r, ns) or (o, h, c, a, r, no, nh, nc) or (o, h, c, a, r)
@@ -27,7 +27,7 @@ class ReplayBuffer(object):
             self.data.pop(0)
 
     def sample(self, batch_size):
-        if self.one_shot:
+        if self.only_once:
             random.shuffle(self.data)
             sample = self.data[:batch_size]
             self.data = self.data[batch_size:]
@@ -62,10 +62,10 @@ class FC_Q(nn.Module):
         self.n_act = n_act
         self.input_c = input_c
 
-        self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
+        # self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
 
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(input_c, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
@@ -87,9 +87,9 @@ class FC_Q(nn.Module):
 
         single playing: N=1, L = len(history_frames), C, H, W = (3, 210, 160), lens_idx = [len(history_frames)-1]
         """
-        lstm_out, (_, _) = self.rnn(obs_)
-
-        return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+        # lstm_out, (_, _) = self.rnn(obs_)
+        # return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+        return self.fc(obs_.view(-1, self.input_c)).view(-1, self.n_act)
 
     def save_model(self, model_file='v1', path='models/'):
         torch.save(self.state_dict(), f'{path}dqn_fc_{model_file}.pth')
@@ -104,36 +104,34 @@ class FC_Q(nn.Module):
 
 class CNN_Q(nn.Module):
     """
-    (N, L, C, H, W)
+    (N, L*C, H, W)
     with h_t <- (o_t, h_t-1)
+
+    use half -> (210, 105) -> (105, 80)
     """
 
-    def __init__(self, n_act: int, input_size: tuple = (3, 210, 160), hidden_size: int = 128):
+    def __init__(self, n_act: int, input_c: int, height: int = 105, width: int = 80, hidden_size: int = 128):
         super(CNN_Q, self).__init__()
-        self.in_c, self.height, self.width = input_size
+        self.input_c, self.height, self.width = input_c, height, width
         self.n_act = n_act
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=hidden_size, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            nn.Conv2d(in_channels=input_c, out_channels=8, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
             nn.ReLU(),
-            nn.AvgPool2d(kernel_size=(self.height, self.width)),  # global max pooling
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
+            nn.ReLU(),
             nn.Flatten(),
+            nn.Linear(13*10*32, hidden_size),
+            nn.ReLU()
         )
-        self.rnn = nn.LSTM(hidden_size, hidden_size, batch_first=True)
+        # self.rnn = nn.LSTM(hidden_size, hidden_size, batch_first=True)
 
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, n_act)
-        )
+        self.fc = nn.Linear(hidden_size, n_act)
 
     def forward(self, obs_):
         """
@@ -142,12 +140,12 @@ class CNN_Q(nn.Module):
 
         single playing: N=1, L = len(history_frames), C, H, W = (3, 210, 160), lens_idx = [len(history_frames)-1]
         """
-        N, L, C, H, W = obs_.size()
-
-        obs_ = self.cnn(obs_.view(-1, C, H, W))
-        lstm_out, hidden_s = self.rnn(obs_.view(N, L, -1))
-
-        return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+        obs_ = self.cnn(obs_.view(-1, self.input_c, self.height, self.width))  # (N, L*C, H, W)
+        return self.fc(obs_).view(-1, self.n_act)
+        # N, L, C, H, W = obs_.size()
+        # obs_ = self.cnn(obs_.view(-1, C, H, W))
+        # lstm_out, hidden_s = self.rnn(obs_.view(N, L, -1))
+        # return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
 
     def save_model(self, model_file='v1', path='models/'):
         torch.save(self.state_dict(), f'{path}dqn_{model_file}.pth')
@@ -164,6 +162,9 @@ class DQNAgent(object):
     """
     TD: TD-target
     MC: MC-target
+
+    Policy_model: newer ongoing model
+    Target_model: older mostly fixed model
     """
 
     def __init__(self, n_act: int, model_file='v0', pre_train=False, eps_greedy: float = -1, training=False,
@@ -175,25 +176,27 @@ class DQNAgent(object):
         self.input_rgb = input_rgb
         self.input_c = input_c
         self.hidden_size = kwargs.get('hidden_size', 128)
-        self.policy_model = CNN_Q(n_act, hidden_size=self.hidden_size).to(device) \
-            if input_rgb else FC_Q(n_act=n_act, input_c=input_c, hidden_size=self.hidden_size).to(device)
-        self.target_model = None
-        self.training = training
-
-        if training:
-            self.target_model = CNN_Q(n_act, hidden_size=self.hidden_size).to(device) \
-                if input_rgb else FC_Q(n_act=n_act, input_c=input_c, hidden_size=self.hidden_size).to(device)
-        self.sync_model()
-
         self.target_type = target_type
         self.rb = ReplayBuffer(capacity=kwargs.get('buffer_size', 10000))
 
         self.batch_size = kwargs.get('batch_size', 64)
         self.gamma = kwargs.get('gamma', 0.9)
-        self.max_grad_norm = kwargs.get('max_grad_norm', 40)
+        self.max_grad_norm = kwargs.get('max_grad_norm', 10)
+        self.max_grad_value = kwargs.get('max_grad_value', 1)
         self.lr = kwargs.get('lr', 0.0001)
         self.eps = kwargs.get('eps', 1e-5)
         self.history_len = kwargs.get('history_len', 5)
+        self.disable_byte_norm = kwargs.get('disable_byte_norm', False)
+
+        self.policy_model = CNN_Q(n_act, input_c=3*self.history_len, hidden_size=self.hidden_size).to(device) \
+            if input_rgb else FC_Q(n_act=n_act, input_c=input_c*self.history_len, hidden_size=self.hidden_size).to(device)
+        self.target_model = None
+        self.training = training
+
+        if training:
+            self.target_model = CNN_Q(n_act, input_c=3*self.history_len, hidden_size=self.hidden_size).to(device) \
+                if input_rgb else FC_Q(n_act=n_act, input_c=input_c*self.history_len, hidden_size=self.hidden_size).to(device)
+        self.sync_model()
 
         # self.hidden_s = None
         self.trajectory = []  # (s, a, r, s') or (o, h, c, a ,r ,n_o ,n_h, n_c) // (o, a, r, no)
@@ -254,10 +257,6 @@ class DQNAgent(object):
                     self.trajectory[i] = v
                     v *= self.gamma
 
-                    # r = self.trajectory[i]
-                    # self.trajectory[i] = r + self.gamma * v  # reward = current + future
-                    # v = r + self.gamma * v
-
                 self.rb.add(o=self.trajectory[i - 2],
                             a=self.trajectory[i - 1],
                             r=self.trajectory[i],
@@ -267,16 +266,16 @@ class DQNAgent(object):
 
     def train_loop(self):
         """
-        train target model
+        train POLICY model !!!
         """
         self.process_trajectory()
 
         if len(self.rb) < self.batch_size:
             return
 
-        self.target_model.train()
+        self.policy_model.train()
 
-        opt = torch.optim.RMSprop(self.target_model.parameters(), lr=self.lr, eps=self.eps)
+        opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
 
         logger.info(  # self.rb.sample()
             f'====== Train Q net using {self.target_type} target (obs={len(self.rb)}) episodes ======')
@@ -285,25 +284,29 @@ class DQNAgent(object):
         o, a, r, n_o = zip(*sample)
         o, a, r, n_o = torch.stack(o), LongTensor(a), FloatTensor(r), torch.stack(n_o)
 
-        q_ = self.target_model(n_o.to(device))
+        q_ = self.policy_model(n_o.to(device))
         if self.target_type == 'TD':
-            # get the td target first
-            r += q_.max(dim=1).values.detach().cpu()
+            self.target_model.eval()
+            # TD target
+            with torch.no_grad():
+                r += self.gamma*self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
 
         opt.zero_grad()
 
         loss = F.mse_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
         loss.backward()
-        clip_grad_norm_(self.target_model.parameters(), self.max_grad_norm)
+        clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
+        clip_grad_value_(self.policy_model.parameters(), self.max_grad_value)
         opt.step()
 
         logger.info(f'Loss = {loss.item():.6f}')
-        self.target_model.eval()
+        self.policy_model.eval()
+        return loss.item()
 
     def sync_model(self):
         if not self.target_model:
             return
-        self.policy_model.load_state_dict(self.target_model.state_dict())
+        self.target_model.load_state_dict(self.policy_model.state_dict())
 
     def process_image_obs(self, obs_: list) -> torch.FloatTensor:
         """
@@ -315,41 +318,52 @@ class DQNAgent(object):
         assert len(obs_) <= self.history_len
 
         obs_ = [torch.FloatTensor(o_.transpose(2, 0, 1)) for o_ in obs_]
-        obs_tensor = torch.zeros((self.history_len, *obs_[0].shape))
-        obs_tensor[-len(obs_):] = torch.stack(obs_)
-        return obs_tensor.unsqueeze(0) / 255.
+        obs_tensor = torch.zeros((self.history_len*3, 210, 160))
+        obs_tensor[-len(obs_)*3:] = torch.cat(obs_)
 
-    def process_vec_obs(self, obs_: list) -> torch.FloatTensor:
+        pool = nn.AvgPool2d(kernel_size=(2, 2))  # to make it smaller
+        return pool(obs_tensor) / 255.
+        # return obs_tensor.unsqueeze(0) / 255.
+
+    def process_vec_obs(self, obs_: list):
         """
         :param obs_:
-        :return: size (1, L, input_c)
+        :return: size (L, input_c)
         """
         assert len(obs_) <= self.history_len
         obs_tensor = torch.zeros((self.history_len, self.input_c))
         obs_tensor[-len(obs_):] = torch.FloatTensor(obs_)
-        return obs_tensor.unsqueeze(0)/255.
+
+        if self.disable_byte_norm:
+            return obs_tensor
+        return obs_tensor/255.
+
+        # if self.disable_byte_norm:
+        #     return obs_tensor.unsqueeze(0)
+        # return obs_tensor.unsqueeze(0)/255.
 
 
 if __name__ == '__main__':
     import gym
 
-    frame_freq = 3
+    frame_freq = 1
     history_len = 10
 
-    env = gym.make('SpaceInvaders-ram-v0')  # 'SpaceInvaders-v0'
+    env = gym.make('SpaceInvaders-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
     agent = DQNAgent(n_act=env.action_space.n,
                      training=True,
                      eps_greedy=0.1,
                      target_type=target,
-                     input_rgb=False,
+                     input_rgb=True,
                      history_len=history_len,
                      input_c=env.observation_space.shape[0])
 
     obs = env.reset()
     agent.reset()
     history = [obs]
+    # traj = [agent.process_vec_obs(history)]
     state_dict = {
         'obs': history,
         'la': list(range(env.action_space.n)),
@@ -360,12 +374,11 @@ if __name__ == '__main__':
     action = None
     while True:
         env.render()
-        if frame == 0:
+        if frame <= 0:
             action = agent.step(state_dict)
             frame = frame_freq - 1
-
+            # traj.append(action)
         obs, reward, done, info = env.step(action)
-
         history.append(obs)
         if len(history) > history_len:
             history.pop(0)
@@ -376,6 +389,8 @@ if __name__ == '__main__':
             'reward': reward,
             'done': False
         }
+        # traj.append(reward)
+        # traj.append(agent.process_vec_obs(history))
 
         logger.debug(f'Action={action}, R_t+1={reward}')
         t += 1

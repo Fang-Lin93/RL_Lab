@@ -17,6 +17,8 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
         logger.info(f'{k}={v}')
 
     agent = DQNAgent(**model_config)
+    agent.training = False
+    agent.eps_greedy = -1
 
     try:
         agent.policy_model.load_model(f'{game}_{model_file}')
@@ -35,9 +37,9 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
 
     while True:
         env.render()
-        if frame == 0:
+        if frame <= 0:
             action = agent.step(state_dict)
-            frame = model_config['frame_freq'] - 1
+            frame = model_config['frame_freq']
 
         obs, reward, done, info = env.step(action)
 
@@ -68,4 +70,4 @@ if __name__ == '__main__':
 
     # SpaceInvaders-v0  Breakout-v0 CartPole-v0
     # eva(game='SpaceInvaders-v0')
-    eva(game='Breakout-ram-v0')
+    eva(game='Breakout-v0')

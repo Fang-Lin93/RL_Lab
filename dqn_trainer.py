@@ -21,41 +21,45 @@ A normal DQN requires (s, a, r, s'), which cannot use RNN as state represents, o
 
 parser.add_argument('--N_episodes', default=1000000, type=int, help='N_episodes')
 parser.add_argument('--max_len', default=10000, type=int, help='max_len of episodes')
-parser.add_argument('--buffer_size', default=1000000, type=int, help='buffer_size of trajectory')
+parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
-parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
+parser.add_argument('--hidden_size', default=256, type=int, help='hidden_size')
 parser.add_argument('--anneal_greedy', default=0.99, type=float, help='eps_greedy')
 parser.add_argument('--gamma', default=0.99, type=float, help='decay factor')
-
 parser.add_argument('--batch_size', default=256, type=int, help='batch_size')
 
-parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads (default: 40)')
+parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
+parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
+
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate of RMSProp (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
-parser.add_argument('--train_freq', default=10, type=int, help='train every ? episode (default: 1)')
+parser.add_argument('--train_freq', default=1, type=int, help='train every ? episode')
+parser.add_argument('--update_freq', default=10, type=int, help='update every ? frame')
 parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
-parser.add_argument('--history_len', default=50, type=int, help='length of the history used, left zeros')
+parser.add_argument('--history_len', default=30, type=int, help='length of the history used, left zeros')
 
-parser.add_argument('--game', default='SpaceInvaders-ram-v0', type=str, help='game env name')
+parser.add_argument('--game', default='SpaceInvaders-v0', type=str, help='game env name')
+parser.add_argument('--input_rgb', action='store_true')
+parser.add_argument('--disable_byte_norm', action='store_true')
 
-#  Breakout-ram-v0  SpaceInvaders-ram-v0
+#  Breakout-v0  SpaceInvaders-v0  CartPole-v0
 
 
 args = parser.parse_args()
 
 
 def main():
+    loss_rec = []
 
     env = gym.make(args.game)
     model_config = args.__dict__
     model_config.update({
         'n_act': env.action_space.n,
         'input_c': env.observation_space.shape[0],
-        'input_rgb': 'ram' not in args.game,
     })
     for k, v in model_config.items():
         logger.info(f'{k}={v}')
@@ -68,7 +72,7 @@ def main():
 
     agent = DQNAgent(n_act=env.action_space.n,
                      input_c=env.observation_space.shape[0],
-                     input_rgb='ram' not in args.game,
+                     input_rgb=args.input_rgb,
                      training=True,
                      eps_greedy=args.eps_greedy,
                      gamma=args.gamma,
@@ -79,7 +83,8 @@ def main():
                      lr=args.lr,
                      eps=args.eps,
                      hidden_size=args.hidden_size,
-                     history_len=args.history_len)
+                     history_len=args.history_len,
+                     disable_byte_norm=args.disable_byte_norm)
     score_recorder = []
     s_time = time.time()
 
@@ -102,9 +107,9 @@ def main():
 
         while True:
             env.render(args.render)
-            if frame == 0:
+            if frame <= 0:
                 action = agent.step(state_dict)
-                frame = args.frame_freq - 1
+                frame = args.frame_freq
 
             obs, reward, done, info = env.step(action)
 
@@ -139,13 +144,18 @@ def main():
 
         if episode % args.train_freq == 0:
             # it may blow up if train too frequently
-            agent.train_loop()
-            agent.sync_model()
+            loss = agent.train_loop()
+            if loss:
+                loss_rec.append(loss)
+                with open(f'results/{args.game}_loss.json', 'w') as handle:
+                    json.dump(loss_rec, handle)
 
-        agent.target_model.save_model(f'{args.game}_v0')
+        if episode % args.update_freq == 0:
+            agent.sync_model()
+            agent.target_model.save_model(f'{args.game}_v0')
 
     plt.plot(score_recorder, label='score')
-    plt.savefig('results/QDN_res.png')
+    plt.savefig(f'results/QDN_{args.game}.png')
     plt.show()
     return
 
@@ -154,5 +164,4 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level='INFO')
     logger.add(f'DQN_{args.game}.log', level='INFO')
-
     main()
