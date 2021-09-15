@@ -19,19 +19,20 @@ Once the model is synchronized, the replay buffer should be cleared !
 A normal DQN requires (s, a, r, s'), which cannot use RNN as state represents, or you can use 'history' as s
 """
 
-parser.add_argument('--N_episodes', default=1000000, type=int, help='N_episodes')
+parser.add_argument('--N_episodes', default=100000, type=int, help='N_episodes')
 parser.add_argument('--max_len', default=10000, type=int, help='max_len of episodes')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
 parser.add_argument('--hidden_size', default=256, type=int, help='hidden_size')
-parser.add_argument('--anneal_greedy', default=0.99, type=float, help='eps_greedy')
+parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
+parser.add_argument('--anneal_greedy', default=0.999, type=float, help='eps_greedy')
 parser.add_argument('--gamma', default=0.99, type=float, help='decay factor')
 parser.add_argument('--batch_size', default=256, type=int, help='batch_size')
 
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
 
-parser.add_argument('--lr', default=0.001, type=float, help='learning rate of RMSProp (default: 0.0001)')
+parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
@@ -84,7 +85,8 @@ def main():
                      eps=args.eps,
                      hidden_size=args.hidden_size,
                      history_len=args.history_len,
-                     disable_byte_norm=args.disable_byte_norm)
+                     disable_byte_norm=args.disable_byte_norm,
+                     n_layers=args.n_layers)
     score_recorder = []
     s_time = time.time()
 
@@ -112,6 +114,12 @@ def main():
                 frame = args.frame_freq
 
             obs, reward, done, info = env.step(action)
+
+            # x, x_dot, theta, theta_dot = obs
+            #
+            # r1 = (env.x_threshold - abs(x)) / env.x_threshold - 0.8
+            # r2 = (env.theta_threshold_radians - abs(theta)) / env.theta_threshold_radians - 0.5
+            # pole_reward = r1 + r2
 
             history.append(obs)
             if len(history) > args.history_len:

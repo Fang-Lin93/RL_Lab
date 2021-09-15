@@ -67,7 +67,10 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='DQN test')
 
-    # SpaceInvaders-v0  Breakout-v0 CartPole-v0
-    # eva(game='SpaceInvaders-v0')
-    eva(game='Breakout-v0')
+    parser.add_argument('--game', default='Breakout-v0', type=str)
+    # SpaceInvaders-v0  Breakout-v0 CartPole-v1
+    args = parser.parse_args()
+    eva(game=args.game)

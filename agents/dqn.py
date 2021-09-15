@@ -57,28 +57,20 @@ class FC_Q(nn.Module):
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, n_act: int, input_c: int, hidden_size: int = 256):
+    def __init__(self, n_act: int, input_c: int, hidden_size: int = 256, n_layers: int = 6):
         super(FC_Q, self).__init__()
         self.n_act = n_act
         self.input_c = input_c
 
         # self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
 
-        self.fc = nn.Sequential(
-            nn.Linear(input_c, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, n_act)
-        )
+        fc_layers = [i for _ in range(n_layers) for i in (nn.Linear(hidden_size, hidden_size), nn.ReLU())]
+
+        self.fc = nn.Sequential(nn.Linear(input_c, hidden_size),
+                                nn.ReLU(),
+                                *fc_layers,
+                                nn.Linear(hidden_size, n_act)
+                                )
 
     def forward(self, obs_):
         """
@@ -126,7 +118,7 @@ class CNN_Q(nn.Module):
             nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(13*10*32, hidden_size),
+            nn.Linear(13 * 10 * 32, hidden_size),
             nn.ReLU()
         )
         # self.rnn = nn.LSTM(hidden_size, hidden_size, batch_first=True)
@@ -187,15 +179,18 @@ class DQNAgent(object):
         self.eps = kwargs.get('eps', 1e-5)
         self.history_len = kwargs.get('history_len', 5)
         self.disable_byte_norm = kwargs.get('disable_byte_norm', False)
+        self.n_layers = kwargs.get('n_layers', 5)
 
-        self.policy_model = CNN_Q(n_act, input_c=3*self.history_len, hidden_size=self.hidden_size).to(device) \
-            if input_rgb else FC_Q(n_act=n_act, input_c=input_c*self.history_len, hidden_size=self.hidden_size).to(device)
+        self.policy_model = CNN_Q(n_act, input_c=3 * self.history_len, hidden_size=self.hidden_size).to(device) \
+            if input_rgb else FC_Q(n_act=n_act, input_c=input_c * self.history_len,
+                                   hidden_size=self.hidden_size, n_layers=self.n_layers).to(device)
         self.target_model = None
         self.training = training
 
         if training:
-            self.target_model = CNN_Q(n_act, input_c=3*self.history_len, hidden_size=self.hidden_size).to(device) \
-                if input_rgb else FC_Q(n_act=n_act, input_c=input_c*self.history_len, hidden_size=self.hidden_size).to(device)
+            self.target_model = CNN_Q(n_act, input_c=3 * self.history_len, hidden_size=self.hidden_size).to(device) \
+                if input_rgb else FC_Q(n_act=n_act, input_c=input_c * self.history_len,
+                                       hidden_size=self.hidden_size, n_layers=self.n_layers).to(device)
         self.sync_model()
 
         # self.hidden_s = None
@@ -289,12 +284,13 @@ class DQNAgent(object):
             self.target_model.eval()
             # TD target
             with torch.no_grad():
-                r += self.gamma*self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
+                r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
 
         opt.zero_grad()
 
-        loss = F.mse_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
+        loss = F.smooth_l1_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
         loss.backward()
+
         clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
         clip_grad_value_(self.policy_model.parameters(), self.max_grad_value)
         opt.step()
@@ -318,8 +314,8 @@ class DQNAgent(object):
         assert len(obs_) <= self.history_len
 
         obs_ = [torch.FloatTensor(o_.transpose(2, 0, 1)) for o_ in obs_]
-        obs_tensor = torch.zeros((self.history_len*3, 210, 160))
-        obs_tensor[-len(obs_)*3:] = torch.cat(obs_)
+        obs_tensor = torch.zeros((self.history_len * 3, 210, 160))
+        obs_tensor[-len(obs_) * 3:] = torch.cat(obs_)
 
         pool = nn.AvgPool2d(kernel_size=(2, 2))  # to make it smaller
         return pool(obs_tensor) / 255.
@@ -336,7 +332,7 @@ class DQNAgent(object):
 
         if self.disable_byte_norm:
             return obs_tensor
-        return obs_tensor/255.
+        return obs_tensor / 255.
 
         # if self.disable_byte_norm:
         #     return obs_tensor.unsqueeze(0)
