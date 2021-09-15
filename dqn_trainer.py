@@ -34,10 +34,12 @@ parser.add_argument('--anneal_greedy', default=0.999, type=float, help='eps_gree
 parser.add_argument('--gamma', default=0.99, type=float, help='decay factor')
 parser.add_argument('--batch_size', default=256, type=int, help='batch_size')
 
-parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
-parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
+parser.add_argument('--max_grad_norm', default=100, type=float, help='max_grad_norm for clipping grads')
+parser.add_argument('--max_grad_value', default=10, type=float, help='max_grad_value for clipping grads')
 
-parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (default: 0.0001)')
+
+# learning rate cannot be too small !!!
+parser.add_argument('--lr', default=0.001, type=float, help='learning rate (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
