@@ -161,8 +161,6 @@ def main():
         if args.target == 'MC':
             agent.process_trajectory(final_payoff=score)
 
-
-
     plt.plot(score_recorder, label='score')
     plt.savefig(f'results/QDN_{args.game}.png')
     plt.show()

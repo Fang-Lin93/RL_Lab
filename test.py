@@ -1,20 +1,26 @@
 
 import gym
 import json
+import random
+from collections import deque
 from loguru import logger
 from agents.dqn import DQNAgent
 
 
 def eva(game: str, max_episode=1000, model_file: str = 'v0'):
-    env = gym.make(game)
-    obs = env.reset()
-    la = list(range(env.action_space.n))
-
     with open(f'results/{game}.json', 'r') as file:
         model_config = json.load(file)
-
     for k, v in model_config.items():
         logger.info(f'{k}={v}')
+
+    env = gym.make(game)
+    obs = env.reset()
+    history = deque([obs], maxlen=model_config['history_len'])
+    la = list(range(env.action_space.n))
+
+    for _ in range(random.randint(1, model_config['no_op_max'])):
+        obs, _, _, _ = env.step(1)  # force game start !
+        history.append(obs)
 
     agent = DQNAgent(**model_config)
     agent.training = False
@@ -25,7 +31,6 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
     except Exception as exp:
         raise ValueError(f'{exp}, model dqn_{game}_{model_file}.pth not find')
 
-    history = [obs]
     state_dict = {
         'obs': history,
         'la': la,
@@ -41,8 +46,6 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
         obs, reward, done, info = env.step(action)
 
         history.append(obs)
-        if len(history) > model_config['history_len']:
-            history.pop(0)
 
         state_dict = {
             'obs': history,
