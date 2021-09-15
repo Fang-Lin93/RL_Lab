@@ -64,7 +64,8 @@ class FC_Q(nn.Module):
 
         # self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
 
-        fc_layers = [i for _ in range(n_layers) for i in (nn.Linear(hidden_size, hidden_size), nn.ReLU())]
+        fc_layers = [i for _ in range(n_layers) for i in
+                     (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size), nn.ReLU())]
 
         self.fc = nn.Sequential(nn.Linear(input_c, hidden_size),
                                 nn.ReLU(),
@@ -191,6 +192,8 @@ class DQNAgent(object):
             self.target_model = CNN_Q(n_act, input_c=3 * self.history_len, hidden_size=self.hidden_size).to(device) \
                 if input_rgb else FC_Q(n_act=n_act, input_c=input_c * self.history_len,
                                        hidden_size=self.hidden_size, n_layers=self.n_layers).to(device)
+            self.target_model.eval()
+
         self.sync_model()
 
         # self.hidden_s = None
@@ -272,16 +275,15 @@ class DQNAgent(object):
 
         opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
 
-        logger.info(  # self.rb.sample()
+        logger.debug(  # self.rb.sample()
             f'====== Train Q net using {self.target_type} target (obs={len(self.rb)}) episodes ======')
 
         sample = self.rb.sample(self.batch_size)
         o, a, r, n_o = zip(*sample)
         o, a, r, n_o = torch.stack(o), LongTensor(a), FloatTensor(r), torch.stack(n_o)
 
-        q_ = self.policy_model(n_o.to(device))
+        q_ = self.policy_model(o.to(device))  # policy model on the current state!
         if self.target_type == 'TD':
-            self.target_model.eval()
             # TD target
             with torch.no_grad():
                 r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
@@ -295,7 +297,7 @@ class DQNAgent(object):
         clip_grad_value_(self.policy_model.parameters(), self.max_grad_value)
         opt.step()
 
-        logger.info(f'Loss = {loss.item():.6f}')
+        logger.debug(f'Loss = {loss.item():.6f}')
         self.policy_model.eval()
         return loss.item()
 

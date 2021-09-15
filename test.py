@@ -18,9 +18,9 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
     history = deque([obs], maxlen=model_config['history_len'])
     la = list(range(env.action_space.n))
 
-    for _ in range(random.randint(1, model_config['no_op_max'])):
-        obs, _, _, _ = env.step(1)  # force game start !
-        history.append(obs)
+    # for _ in range(random.randint(1, model_config['no_op_max'])):
+    #     obs, _, _, _ = env.step(1)  # force game start !
+    #     history.append(obs)
 
     agent = DQNAgent(**model_config)
     agent.training = False
@@ -29,7 +29,7 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
     try:
         agent.policy_model.load_model(f'{game}_{model_file}')
     except Exception as exp:
-        raise ValueError(f'{exp}, model dqn_{game}_{model_file}.pth not find')
+        raise ValueError(f'{exp}')
 
     state_dict = {
         'obs': history,
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    parser.add_argument('--game', default='Breakout-ram-v4', type=str)
-    # SpaceInvaders-v0 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
+    parser.add_argument('--game', default='CartPole-v1', type=str)
+    # SpaceInvaders-ram-v4 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
     eva(game=args.game)
