@@ -17,6 +17,11 @@ here (o, h, c, a, r, no, nh, nc) is given and 'h, c, nh, nc' are already calcula
 Once the model is synchronized, the replay buffer should be cleared !
 
 A normal DQN requires (s, a, r, s'), which cannot use RNN as state represents, or you can use 'history' as s
+
+v0: 0.25 chance take previous action
+v4: all action counted
+Deterministic: skip 4 frames, otherwise randomly in (2, 5)
+NoFrameskip-v4: no frame skip and no action repeat stochasticity
 """
 
 parser.add_argument('--N_episodes', default=100000, type=int, help='N_episodes')
@@ -43,11 +48,11 @@ parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame
 
 parser.add_argument('--history_len', default=30, type=int, help='length of the history used, left zeros')
 
-parser.add_argument('--game', default='SpaceInvaders-v0', type=str, help='game env name')
+parser.add_argument('--game', default='Breakout-v4', type=str, help='game env name')
 parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--disable_byte_norm', action='store_true')
 
-#  Breakout-v0  SpaceInvaders-v0  CartPole-v0
+#  Breakout-v0  SpaceInvaders-v0  CartPole-v0 BreakoutNoFrameskip-v4 Breakout-v4
 
 
 args = parser.parse_args()
