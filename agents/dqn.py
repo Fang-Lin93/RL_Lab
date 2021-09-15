@@ -263,7 +263,7 @@ class DQNAgent(object):
         """
         train POLICY model !!!
         """
-        self.process_trajectory()
+        # self.process_trajectory()
 
         if len(self.rb) < self.batch_size:
             return

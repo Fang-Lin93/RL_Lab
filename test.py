@@ -32,14 +32,11 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
         'reward': None,
         'done': False,
     }
-    t, score, frame = 0, 0, 0
-    action = None
+    t, score = 0, 0
 
     while True:
         env.render()
-        if frame <= 0:
-            action = agent.step(state_dict)
-            frame = model_config['frame_freq']
+        action = agent.step(state_dict)
 
         obs, reward, done, info = env.step(action)
 
@@ -57,7 +54,6 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
         logger.debug(f'Action={action}, R_t+1={reward}')
         score += reward
         t += 1
-        frame -= 1
         if done or t > max_episode:
             state_dict['done'] = True
             agent.step(state_dict)
@@ -70,7 +66,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    parser.add_argument('--game', default='Breakout-v4', type=str)
-    # SpaceInvaders-v0  Breakout-v4 CartPole-v1  BreakoutNoFrameskip-v4
+    parser.add_argument('--game', default='Breakout-ram-v4', type=str)
+    # SpaceInvaders-v0 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
     eva(game=args.game)
