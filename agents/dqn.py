@@ -109,22 +109,29 @@ class CNN_Q(nn.Module):
         self.n_act = n_act
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=input_c, out_channels=8, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
+            nn.Conv2d(in_channels=input_c, out_channels=8, kernel_size=(5, 5), stride=(2, 2)),
+            nn.BatchNorm2d(8),
             nn.ReLU(),
-            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(5, 5), stride=(2, 2)),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            nn.MaxPool2d(kernel_size=(2, 2)),  # global max pooling
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(5, 5), stride=(2, 2)),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(13 * 10 * 32, hidden_size),
-            nn.ReLU()
         )
         # self.rnn = nn.LSTM(hidden_size, hidden_size, batch_first=True)
+        h = self.s_cv2d(self.s_cv2d(self.s_cv2d(height)))
+        w = self.s_cv2d(self.s_cv2d(self.s_cv2d(width)))
+        self.fc = nn.Sequential(
+            nn.Linear(32*w*h, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n_act)
+        )
 
-        self.fc = nn.Linear(hidden_size, n_act)
+    @staticmethod
+    def s_cv2d(size, kernel_size=5, stride=2, padding=0):
+        return (size + 2*padding - kernel_size) // stride + 1
 
     def forward(self, obs_):
         """
@@ -282,11 +289,12 @@ class DQNAgent(object):
         o, a, r, n_o = zip(*sample)
         o, a, r, n_o = torch.stack(o), LongTensor(a), FloatTensor(r), torch.stack(n_o)
 
-        q_ = self.policy_model(o.to(device))  # policy model on the current state!
         if self.target_type == 'TD':
             # TD target
             with torch.no_grad():
                 r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
+
+        q_ = self.policy_model(o.to(device))  # policy model on the current state!
 
         opt.zero_grad()
 
@@ -318,7 +326,6 @@ class DQNAgent(object):
         obs_ = [torch.FloatTensor(o_.transpose(2, 0, 1)) for o_ in obs_]
         obs_tensor = torch.zeros((self.history_len * 3, 210, 160))
         obs_tensor[-len(obs_) * 3:] = torch.cat(obs_)
-
         pool = nn.AvgPool2d(kernel_size=(2, 2))  # to make it smaller
         return pool(obs_tensor) / 255.
         # return obs_tensor.unsqueeze(0) / 255.

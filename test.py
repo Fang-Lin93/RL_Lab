@@ -1,6 +1,6 @@
 
 import gym
-import json
+import pickle
 import random
 from collections import deque
 from loguru import logger
@@ -8,11 +8,11 @@ from agents.dqn import DQNAgent
 
 
 def eva(game: str, max_episode=1000, model_file: str = 'v0'):
-    with open(f'results/{game}.json', 'r') as file:
-        model_config = json.load(file)
+    with open(f'results/{game}.pickle', 'rb') as file:
+        model_config = pickle.load(file)
     for k, v in model_config.items():
         logger.info(f'{k}={v}')
-
+w
     env = gym.make(game)
     obs = env.reset()
     history = deque([obs], maxlen=model_config['history_len'])

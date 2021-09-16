@@ -1,7 +1,7 @@
 import gym
 import sys
 import time
-import json
+import pickle
 import os
 from collections import deque
 from matplotlib import pyplot as plt
@@ -25,14 +25,14 @@ Deterministic: skip 4 frames, otherwise randomly in (2, 5)
 NoFrameskip-v4: no frame skip and no action repeat stochasticity
 """
 
-parser.add_argument('--N_episodes', default=100000, type=int, help='N_episodes')
-parser.add_argument('--max_len', default=10000, type=int, help='max_len of episodes')
+parser.add_argument('--N_episodes', default=10000, type=int, help='N_episodes')
+parser.add_argument('--max_len', default=100000, type=int, help='max_len of episodes')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
-parser.add_argument('--explore_step', default=200, type=int, help='anneal greedy')
+parser.add_argument('--explore_step', default=1000, type=int, help='anneal greedy')
 parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
-parser.add_argument('--gamma', default=0.999, type=float, help='decay factor')
+parser.add_argument('--gamma', default=0.95, type=float, help='decay factor')
 
 # learning rate cannot be too small !!!
 
@@ -75,8 +75,8 @@ def main():
     if not os.path.exists('results/'):
         os.mkdir('results/')
 
-    with open(f'results/{args.game}.json', 'w') as handle:
-        json.dump(model_config, handle)
+    with open(f'results/{args.game}.pickle', 'wb') as handle:
+        pickle.dump(model_config, handle)
 
     agent = DQNAgent(n_act=env.action_space.n,
                      input_c=env.observation_space.shape[0],
@@ -94,7 +94,7 @@ def main():
                      history_len=args.history_len,
                      disable_byte_norm=args.disable_byte_norm,
                      n_layers=args.n_layers)
-    score_recorder = []
+    score_rec = []
     step = 0
     s_time = time.time()
     for episode in range(args.N_episodes):
@@ -105,10 +105,6 @@ def main():
 
         # anneal epsilon greedy
         agent.eps_greedy = max(args.eps_greedy, 1 - episode * (1 - args.eps_greedy) / args.explore_step)
-
-        # for _ in range(random.randint(1, args.no_op_max)):
-        #     obs, _, _, _ = env.step(1)  # force game start !
-        #     history.append(obs)
 
         state_dict = {
             'obs': history,
@@ -147,11 +143,9 @@ def main():
                 loss = agent.train_loop()
                 if loss:
                     loss_rec.append(loss)
-                    with open(f'results/{args.game}_loss.json', 'w') as handle:
-                        json.dump(loss_rec, handle)
 
         # add to buffer
-        score_recorder.append(score)
+        score_rec.append(score)
         if args.target == 'TD':
             agent.process_trajectory(final_payoff=reward)
         if args.target == 'MC':
@@ -161,7 +155,12 @@ def main():
             agent.sync_model()
             agent.target_model.save_model(f'{args.game}_v0')
 
-    plt.plot(score_recorder, label='score')
+        with open(f'results/{args.game}_reward.pickle', 'wb') as handle:
+            pickle.dump(score_rec, handle)
+        with open(f'results/{args.game}_loss.pickle', 'wb') as handle:
+            pickle.dump(loss_rec, handle)
+
+    plt.plot(score_rec, label='score')
     plt.savefig(f'results/QDN_{args.game}.png')
     plt.legend()
     plt.show()
