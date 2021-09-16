@@ -69,7 +69,7 @@ class FC_Q(nn.Module):
         fc_in = input_c
         if lstm:
             self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
-            fc_in = hidden_size
+            fc_in = hidden_size + input_c
 
         fc_layers = [i for _ in range(n_layers) for i in
                      (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size), nn.ReLU())]
@@ -88,7 +88,8 @@ class FC_Q(nn.Module):
 
         if self.lstm:
             lstm_out, (_, _) = self.rnn(obs_)
-            return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+            x = torch.cat([obs_[:, -1, :], lstm_out[:, -1, :]], dim=-1)
+            return self.fc(x).view(-1, self.n_act)
 
         return self.fc(obs_.view(-1, self.input_c)).view(-1, self.n_act)
 

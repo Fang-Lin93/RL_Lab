@@ -26,13 +26,13 @@ NoFrameskip-v4: no frame skip and no action repeat stochasticity
 """
 
 # buffer
-parser.add_argument('--N_episodes', default=10000, type=int, help='N_episodes')
+parser.add_argument('--N_episodes', default=100000, type=int, help='N_episodes')
 parser.add_argument('--max_len', default=100000, type=int, help='max_len of episodes')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
-parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
+parser.add_argument('--eps_greedy', default=0.05, type=float, help='eps_greedy (default: 0.1)')
 parser.add_argument('--explore_step', default=1000, type=int, help='anneal greedy')
 
-# model
+# model  lstm can easily blow up
 parser.add_argument('--lstm', action='store_true')
 parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
@@ -40,8 +40,8 @@ parser.add_argument('--gamma', default=0.95, type=float, help='decay factor')
 parser.add_argument('--history_len', default=30, type=int, help='length of the history used, left zeros')
 
 
-# training
-parser.add_argument('--lr', default=0.001, type=float, help='learning rate (default: 0.0001)')
+# training large learning rate can fluctuate! how to prevent fluctuation ? # TODO
+parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
@@ -52,7 +52,7 @@ parser.add_argument('--update_freq', default=10, type=int, help='update every ? 
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
-parser.add_argument('--game', default='CartPole-v1', type=str, help='game env name')
+parser.add_argument('--game', default='Breakout-ram-v4', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
