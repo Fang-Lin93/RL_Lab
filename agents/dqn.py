@@ -58,7 +58,7 @@ class FC_Q(nn.Module):
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, n_act: int, input_c: int, hidden_size: int = 256, n_layers: int = 6, lstm=False):
+    def __init__(self, n_act: int, input_c: int, hidden_size: int = 32, n_layers: int = 6, lstm=False):
         super(FC_Q, self).__init__()
         self.n_act = n_act
         self.input_c = input_c
@@ -112,20 +112,20 @@ class CNN_Q(nn.Module):
     use half -> (210, 105) -> (105, 80)
     """
 
-    def __init__(self, n_act: int, input_c: int, height: int = 105, width: int = 80, hidden_size: int = 128):
+    def __init__(self, n_act: int, input_c: int, height: int = 105, width: int = 80, hidden_size: int = 32):
         super(CNN_Q, self).__init__()
         self.input_c, self.height, self.width = input_c, height, width
         self.n_act = n_act
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=input_c, out_channels=8, kernel_size=(5, 5), stride=(2, 2)),
-            nn.BatchNorm2d(8),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(5, 5), stride=(2, 2)),
+            nn.Conv2d(in_channels=input_c, out_channels=16, kernel_size=(4, 4), stride=(2, 2)),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(5, 5), stride=(2, 2)),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=(4, 4), stride=(2, 2)),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=(4, 4), stride=(2, 2)),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.Flatten(),
         )
@@ -133,13 +133,13 @@ class CNN_Q(nn.Module):
         h = self.s_cv2d(self.s_cv2d(self.s_cv2d(height)))
         w = self.s_cv2d(self.s_cv2d(self.s_cv2d(width)))
         self.fc = nn.Sequential(
-            nn.Linear(32*w*h, hidden_size),
+            nn.Linear(16*w*h, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, n_act)
         )
 
     @staticmethod
-    def s_cv2d(size, kernel_size=5, stride=2, padding=0):
+    def s_cv2d(size, kernel_size=4, stride=2, padding=0):
         return (size + 2*padding - kernel_size) // stride + 1
 
     def forward(self, obs_):
@@ -184,11 +184,11 @@ class DQNAgent(object):
 
         self.input_rgb = input_rgb
         self.input_c = input_c
-        self.hidden_size = kwargs.get('hidden_size', 128)
+        self.hidden_size = kwargs.get('hidden_size', 32)
         self.target_type = target_type
         self.rb = ReplayBuffer(capacity=kwargs.get('buffer_size', 10000))
 
-        self.batch_size = kwargs.get('batch_size', 64)
+        self.batch_size = kwargs.get('batch_size', 128)
         self.gamma = kwargs.get('gamma', 0.9)
         self.max_grad_norm = kwargs.get('max_grad_norm', 10)
         self.max_grad_value = kwargs.get('max_grad_value', 1)
@@ -207,6 +207,7 @@ class DQNAgent(object):
         self.policy_model = CNN_Q(n_act, input_c=model_in_channel, hidden_size=self.hidden_size).to(device) \
             if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
                                    lstm=self.lstm, n_layers=self.n_layers).to(device)
+        logger.info(f'Num paras={self.policy_model.num_paras()}')
         self.target_model = None
         self.training = training
 
@@ -369,19 +370,19 @@ if __name__ == '__main__':
     import gym
 
     frame_freq = 1
-    history_len = 10
+    history_len = 5
 
-    env = gym.make('SpaceInvaders-ram-v0')  # 'SpaceInvaders-v0'
+    env = gym.make('SpaceInvaders-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
     agent = DQNAgent(n_act=env.action_space.n,
                      training=True,
                      eps_greedy=0.1,
                      target_type=target,
-                     input_rgb=False,
+                     input_rgb=True,
                      history_len=history_len,
                      input_c=env.observation_space.shape[0],
-                     lstm=True)
+                     lstm=False)
 
     obs = env.reset()
     agent.reset()
