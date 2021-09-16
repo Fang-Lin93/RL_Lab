@@ -12,7 +12,7 @@ def eva(game: str, max_episode=1000, model_file: str = 'v0'):
         model_config = pickle.load(file)
     for k, v in model_config.items():
         logger.info(f'{k}={v}')
-w
+
     env = gym.make(game)
     obs = env.reset()
     history = deque([obs], maxlen=model_config['history_len'])

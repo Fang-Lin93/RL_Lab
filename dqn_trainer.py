@@ -25,34 +25,37 @@ Deterministic: skip 4 frames, otherwise randomly in (2, 5)
 NoFrameskip-v4: no frame skip and no action repeat stochasticity
 """
 
+# buffer
 parser.add_argument('--N_episodes', default=10000, type=int, help='N_episodes')
 parser.add_argument('--max_len', default=100000, type=int, help='max_len of episodes')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
 parser.add_argument('--eps_greedy', default=0.1, type=float, help='eps_greedy (default: 0.1)')
 parser.add_argument('--explore_step', default=1000, type=int, help='anneal greedy')
+
+# model
+parser.add_argument('--lstm', action='store_true')
 parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
 parser.add_argument('--gamma', default=0.95, type=float, help='decay factor')
+parser.add_argument('--history_len', default=30, type=int, help='length of the history used, left zeros')
 
-# learning rate cannot be too small !!!
 
+# training
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
 parser.add_argument('--batch_size', default=128, type=int, help='batch_size')
-
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
-parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
 parser.add_argument('--train_freq', default=5, type=int, help='train every ? frame')
 parser.add_argument('--update_freq', default=10, type=int, help='update every ? episode')
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
-parser.add_argument('--history_len', default=30, type=int, help='length of the history used, left zeros')
-
+# game
 parser.add_argument('--game', default='CartPole-v1', type=str, help='game env name')
-parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--disable_byte_norm', action='store_true')
+parser.add_argument('--input_rgb', action='store_true')
+parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
 
 #  BeamRider-ram-v4 Breakout-v0  SpaceInvaders-v0  CartPole-v0 BreakoutNoFrameskip-v4 Breakout-v4
 
@@ -78,22 +81,7 @@ def main():
     with open(f'results/{args.game}.pickle', 'wb') as handle:
         pickle.dump(model_config, handle)
 
-    agent = DQNAgent(n_act=env.action_space.n,
-                     input_c=env.observation_space.shape[0],
-                     input_rgb=args.input_rgb,
-                     training=True,
-                     eps_greedy=args.eps_greedy,
-                     gamma=args.gamma,
-                     batch_size=args.batch_size,
-                     buffer_size=args.buffer_size,
-                     max_grad_norm=args.max_grad_norm,
-                     target_type=args.target,
-                     lr=args.lr,
-                     eps=args.eps,
-                     hidden_size=args.hidden_size,
-                     history_len=args.history_len,
-                     disable_byte_norm=args.disable_byte_norm,
-                     n_layers=args.n_layers)
+    agent = DQNAgent(training=True, **args.__dict__)
     score_rec = []
     step = 0
     s_time = time.time()

@@ -53,21 +53,28 @@ class ReplayBuffer(object):
 
 class FC_Q(nn.Module):
     """
-    (N, L, C)
+    (N, L, C) for LSTM
+    otherwise: (N, L*C)
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, n_act: int, input_c: int, hidden_size: int = 256, n_layers: int = 6):
+    def __init__(self, n_act: int, input_c: int, hidden_size: int = 256, n_layers: int = 6, lstm=False):
         super(FC_Q, self).__init__()
         self.n_act = n_act
         self.input_c = input_c
+        self.hidden_size = hidden_size
+        self.lstm = lstm
+        self.rnn = None
 
-        # self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
+        fc_in = input_c
+        if lstm:
+            self.rnn = nn.LSTM(input_c, hidden_size, batch_first=True)
+            fc_in = hidden_size
 
         fc_layers = [i for _ in range(n_layers) for i in
                      (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size), nn.ReLU())]
 
-        self.fc = nn.Sequential(nn.Linear(input_c, hidden_size),
+        self.fc = nn.Sequential(nn.Linear(fc_in, hidden_size),
                                 nn.ReLU(),
                                 *fc_layers,
                                 nn.Linear(hidden_size, n_act)
@@ -75,13 +82,14 @@ class FC_Q(nn.Module):
 
     def forward(self, obs_):
         """
-        x of size (3, 210, 160) , if (210, 160, 3), try using tensor.permute(2, 0, 1)
-        lens_idx = [0, 1,5, 2,...] is the index of outputs for different trajectories (= length_seq - 1)
-
-        single playing: N=1, L = len(history_frames), C, H, W = (3, 210, 160), lens_idx = [len(history_frames)-1]
+        lstm -> (N=1, L, input_c)
+        otherwise -> (N=1, L*input_c)
         """
-        # lstm_out, (_, _) = self.rnn(obs_)
-        # return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+
+        if self.lstm:
+            lstm_out, (_, _) = self.rnn(obs_)
+            return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
+
         return self.fc(obs_.view(-1, self.input_c)).view(-1, self.n_act)
 
     def save_model(self, model_file='v1', path='models/'):
@@ -188,17 +196,23 @@ class DQNAgent(object):
         self.history_len = kwargs.get('history_len', 5)
         self.disable_byte_norm = kwargs.get('disable_byte_norm', False)
         self.n_layers = kwargs.get('n_layers', 5)
+        self.lstm = kwargs.get('lstm', False)
 
-        self.policy_model = CNN_Q(n_act, input_c=3 * self.history_len, hidden_size=self.hidden_size).to(device) \
-            if input_rgb else FC_Q(n_act=n_act, input_c=input_c * self.history_len,
-                                   hidden_size=self.hidden_size, n_layers=self.n_layers).to(device)
+        if self.lstm:
+            model_in_channel = 3 if self.input_rgb else input_c
+        else:
+            model_in_channel = 3 * self.history_len if self.input_rgb else input_c * self.history_len
+
+        self.policy_model = CNN_Q(n_act, input_c=model_in_channel, hidden_size=self.hidden_size).to(device) \
+            if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
+                                   lstm=self.lstm, n_layers=self.n_layers).to(device)
         self.target_model = None
         self.training = training
 
         if training:
-            self.target_model = CNN_Q(n_act, input_c=3 * self.history_len, hidden_size=self.hidden_size).to(device) \
-                if input_rgb else FC_Q(n_act=n_act, input_c=input_c * self.history_len,
-                                       hidden_size=self.hidden_size, n_layers=self.n_layers).to(device)
+            self.target_model = CNN_Q(n_act, input_c=model_in_channel, hidden_size=self.hidden_size).to(device) \
+                if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
+                                       lstm=self.lstm, n_layers=self.n_layers).to(device)
             self.target_model.eval()
 
         self.sync_model()
@@ -338,6 +352,8 @@ class DQNAgent(object):
         assert len(obs_) <= self.history_len
         obs_tensor = torch.zeros((self.history_len, self.input_c))
         obs_tensor[-len(obs_):] = torch.FloatTensor(obs_)
+        if self.lstm:
+            obs_tensor = obs_tensor.unsqueeze(0)
 
         if self.disable_byte_norm:
             return obs_tensor
@@ -354,16 +370,17 @@ if __name__ == '__main__':
     frame_freq = 1
     history_len = 10
 
-    env = gym.make('SpaceInvaders-v0')  # 'SpaceInvaders-v0'
+    env = gym.make('SpaceInvaders-ram-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
     agent = DQNAgent(n_act=env.action_space.n,
                      training=True,
                      eps_greedy=0.1,
                      target_type=target,
-                     input_rgb=True,
+                     input_rgb=False,
                      history_len=history_len,
-                     input_c=env.observation_space.shape[0])
+                     input_c=env.observation_space.shape[0],
+                     lstm=True)
 
     obs = env.reset()
     agent.reset()
