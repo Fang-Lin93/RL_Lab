@@ -1,7 +1,6 @@
 import gym
 import time
 import asyncio
-import asyncio
 from agents.human import HumanAtariAgent
 
 

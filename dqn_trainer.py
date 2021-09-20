@@ -34,7 +34,7 @@ parser.add_argument('--explore_step', default=1000, type=int, help='anneal greed
 
 # model  lstm can easily blow up
 parser.add_argument('--lstm', action='store_true')
-parser.add_argument('--hidden_size', default=16, type=int, help='hidden_size')
+parser.add_argument('--hidden_size', default=32, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
 parser.add_argument('--gamma', default=0.95, type=float, help='decay factor')
 parser.add_argument('--history_len', default=5, type=int, help='length of the history used, left zeros')

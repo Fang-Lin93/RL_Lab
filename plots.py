@@ -3,7 +3,7 @@ import pickle
 from matplotlib import pyplot as plt
 
 
-game = 'Breakout-ram-v4'  # 'SpaceInvaders-ram-v4'  'CartPole-v1'
+game = 'Breakout-v4'  # 'SpaceInvaders-ram-v4'  'CartPole-v0'  Breakout-v4
 
 with open(f'results/{game}_loss.pickle', 'rb') as file:
     loss = pickle.load(file)
