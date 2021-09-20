@@ -1,15 +1,41 @@
-import keyboard
-from consts import KEYBOARD_MAP
+import gym
+import time
+import asyncio
+import asyncio
+from agents.human import HumanAtariAgent
 
 
-async def keyboard_act():
-    for key, v in KEYBOARD_MAP.items():
-        if keyboard.is_pressed(key):
-            print(f'You Pressed {key}')
-            return v
+# MontezumaRevenge-v0, Breakout-v4
 
+async def main():
+    env = gym.make('Breakout-v4')
+    obs = env.reset()  # reset for each new trial
+    LA = list(range(env.action_space.n))
+    state_dict = {
+        'obs': obs,
+        'la': LA,
+        'reward': None,
+        'done': False,
+    }
 
-if __name__ == '__main__':
+    t = 0
+    score = 0
+    agent = HumanAtariAgent()
     while True:
-        action = keyboard_act()
-        print(action)
+        env.render()
+        action = await agent.step(state_dict)
+        obs, reward, done, info = env.step(action)
+        t += 1
+        state_dict = {
+            'obs': obs,
+            'la': LA,
+            'reward': reward,
+            'done': done,
+        }
+        score += reward
+        if done:
+            print(f"Episode finished after {t + 1} time steps total reward={score}")
+            break
+        time.sleep(0.05)
+
+asyncio.run(main())

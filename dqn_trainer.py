@@ -34,7 +34,7 @@ parser.add_argument('--explore_step', default=1000, type=int, help='anneal greed
 
 # model  lstm can easily blow up
 parser.add_argument('--lstm', action='store_true')
-parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
+parser.add_argument('--hidden_size', default=16, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
 parser.add_argument('--gamma', default=0.95, type=float, help='decay factor')
 parser.add_argument('--history_len', default=5, type=int, help='length of the history used, left zeros')
@@ -45,14 +45,14 @@ parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (def
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
-parser.add_argument('--batch_size', default=128, type=int, help='batch_size')
+parser.add_argument('--batch_size', default=64, type=int, help='batch_size')
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
 parser.add_argument('--train_freq', default=5, type=int, help='train every ? frame')
 parser.add_argument('--update_freq', default=10, type=int, help='update every ? episode')
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
-parser.add_argument('--game', default='Breakout-ram-v4', type=str, help='game env name')
+parser.add_argument('--game', default='Breakout-v4', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')

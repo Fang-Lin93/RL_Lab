@@ -69,7 +69,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    parser.add_argument('--game', default='Breakout-ram-v4', type=str)
+    parser.add_argument('--game', default='Breakout-v4', type=str)
     # SpaceInvaders-ram-v4 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
     eva(game=args.game)

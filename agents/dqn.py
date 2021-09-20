@@ -94,11 +94,11 @@ class FC_Q(nn.Module):
         return self.fc(obs_.view(-1, self.input_c)).view(-1, self.n_act)
 
     def save_model(self, model_file='v1', path='models/'):
-        torch.save(self.state_dict(), f'{path}dqn_fc_{model_file}.pth')
+        torch.save(self.state_dict(), f'{path}dqn_{model_file}.pth')
 
     def load_model(self, model_file='v0', path='models/'):
         self.load_state_dict(
-            torch.load(f'{path}dqn_fc_{model_file}.pth', map_location=torch.device('cpu')))
+            torch.load(f'{path}dqn_{model_file}.pth', map_location=torch.device('cpu')))
 
     def num_paras(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -196,8 +196,9 @@ class DQNAgent(object):
         self.eps = kwargs.get('eps', 1e-5)
         self.history_len = kwargs.get('history_len', 5)
         self.disable_byte_norm = kwargs.get('disable_byte_norm', False)
-        self.n_layers = kwargs.get('n_layers', 5)
+        self.n_layers = kwargs.get('n_layers', 6)
         self.lstm = kwargs.get('lstm', False)
+        self.game = kwargs.get('game', 'game')
 
         if self.lstm:
             model_in_channel = 3 if self.input_rgb else input_c
@@ -216,6 +217,14 @@ class DQNAgent(object):
                 if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
                                        lstm=self.lstm, n_layers=self.n_layers).to(device)
             self.target_model.eval()
+
+        try:
+            self.target_model.load_state_dict(
+                torch.load(f'models/dqn_{self.game}_v0.pth', map_location=torch.device('cpu')))
+            logger.info(f'Successfully loaded checkpoint = models/dqn_{self.game}_v0.pth')
+
+        except Exception as ex:
+            print(ex)
 
         self.sync_model()
 
@@ -372,7 +381,7 @@ if __name__ == '__main__':
     frame_freq = 1
     history_len = 5
 
-    env = gym.make('SpaceInvaders-v0')  # 'SpaceInvaders-v0'
+    env = gym.make('Breakout-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
     agent = DQNAgent(n_act=env.action_space.n,
