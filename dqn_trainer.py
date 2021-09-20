@@ -55,7 +55,6 @@ parser.add_argument('--update_freq', default=10, type=int, help='update every ? 
 parser.add_argument('--game', default='Breakout-ram-v4', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
-parser.add_argument('--gray_img', action='store_true')
 parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
 
 #  BeamRider-ram-v4 Breakout-v0  SpaceInvaders-v0  CartPole-v0 BreakoutNoFrameskip-v4 Breakout-v4
@@ -66,7 +65,7 @@ args = parser.parse_args()
 
 def main():
     loss_rec = []
-
+    loss = None
     env = gym.make(args.game)
     model_config = args.__dict__
     model_config.update({
@@ -129,12 +128,10 @@ def main():
                 break
 
             if step % args.train_freq == 0:
-                loss = agent.train_loop()
-                if loss:
-                    loss_rec.append(loss)
+                current_loss = agent.train_loop()
+                if current_loss:
+                    loss = current_loss
 
-        # add to buffer
-        score_rec.append(score)
         if args.target == 'TD':
             agent.process_trajectory(final_payoff=reward)
         if args.target == 'MC':
@@ -143,6 +140,10 @@ def main():
         if step % args.update_freq == 0:
             agent.sync_model()
             agent.target_model.save_model(f'{args.game}_v0')
+            # record the training data
+            if loss:
+                loss_rec.append(loss)
+            score_rec.append(score)
 
         with open(f'results/{args.game}_reward.pickle', 'wb') as handle:
             pickle.dump(score_rec, handle)

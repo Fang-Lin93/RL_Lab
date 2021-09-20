@@ -37,9 +37,6 @@ class ReplayBuffer(object):
     def cla(self):
         self.data = []
 
-    def __len__(self):
-        return len(self.data)
-
     def is_full(self):
         return len(self.data) >= self.capacity
 
@@ -49,6 +46,9 @@ class ReplayBuffer(object):
     def dataloader(self, batch_size):
         random.shuffle(self.data)
         return (self.data[i:i + batch_size] for i in range(0, len(self), batch_size))
+
+    def __len__(self):
+        return len(self.data)
 
 
 class FC_Q(nn.Module):
