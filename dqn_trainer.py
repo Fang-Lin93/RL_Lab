@@ -152,6 +152,29 @@ def main():
             logger.debug(f'Action={action}, R_t+1={reward}')
             score += reward
             t += 1
+
+            # training
+            if step % args.train_freq == 0:
+                current_loss = agent.train_loop()
+                if current_loss:
+                    loss = current_loss
+
+            # update policy model as the target
+            if step % config['update_freq'] == 0:
+                agent.sync_model()
+                # agent.target_model.save_model(f'{config["game"]}_{config["S"]}')
+                if loss:
+                    loss_rec.append(loss)
+                score_rec.append(score)
+                checkpoint.update(model_dict={'policy': agent.policy_model.state_dict(),
+                                              'target': agent.target_model.state_dict()})
+                checkpoint.update(episode=episode)
+                checkpoint.update(reward=score_rec)
+                checkpoint.update(loss=loss_rec)
+                with open(f'checkpoints/{config["S"]}_ckp.pickle', 'wb') as handle:
+                    pickle.dump(checkpoint, handle)
+
+            # end of this episode
             if done or t > config['max_len']:
                 state_dict['done'] = True
                 agent.step(state_dict)
@@ -160,37 +183,10 @@ def main():
                             f"remaining={(time.time() - s_time) / (episode + 1) * (config['N_episodes'] - episode - 1):.3f}s")
                 break
 
-            if step % args.train_freq == 0:
-                current_loss = agent.train_loop()
-                if current_loss:
-                    loss = current_loss
-
         if config['target'] == 'TD':
             agent.process_trajectory(final_payoff=reward)
         if config['target'] == 'MC':
             agent.process_trajectory(final_payoff=score)
-
-        if step % config['update_freq'] == 0:
-            agent.sync_model()
-            # agent.target_model.save_model(f'{config["game"]}_{config["S"]}')
-            # record the training data
-            if loss:
-                loss_rec.append(loss)
-            score_rec.append(score)
-
-            checkpoint.update(model_dict={'policy': agent.policy_model.state_dict(),
-                                          'target': agent.target_model.state_dict()})
-            checkpoint.update(episode=episode)
-            checkpoint.update(reward=score_rec)
-            checkpoint.update(loss=loss_rec)
-            with open(f'checkpoints/{config["S"]}_ckp.pickle', 'wb') as handle:
-                pickle.dump(checkpoint, handle)
-
-        # with open(f'results/{args.game}_reward.pickle', 'wb') as handle:
-        #     pickle.dump(score_rec, handle)
-        # with open(f'results/{args.game}_loss.pickle', 'wb') as handle:
-        #     pickle.dump(loss_rec, handle)
-
 
     plt.plot(score_rec, label='score')
     plt.savefig(f'results/QDN_{config["game"]}.png')

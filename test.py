@@ -13,6 +13,7 @@ def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
 
     config = checkpoints['config']
 
+    logger.info(f'Episode={checkpoints["episode"]}')
 
     for k, v in config.items():
         logger.info(f'{k}={v}')
@@ -32,6 +33,7 @@ def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
 
     try:
         agent.policy_model.load_state_dict(checkpoints['model_dict']['target'])
+        agent.policy_model.eval()
     except Exception as exp:
         raise ValueError(f'{exp}')
 
@@ -73,7 +75,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    parser.add_argument('--game', default='Breakout-v4', type=str)
+    # parser.add_argument('--game', default='Breakout-v4', type=str)
     parser.add_argument('--ckp', default='run', type=str)
     # SpaceInvaders-ram-v4 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
