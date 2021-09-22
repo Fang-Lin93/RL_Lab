@@ -58,7 +58,7 @@ class FC_Q(nn.Module):
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, n_act: int, input_c: int, hidden_size: int = 32, n_layers: int = 6, lstm=False):
+    def __init__(self, n_act: int, input_c: int, hidden_size: int = 32, n_layers: int = 6, lstm=False, momentum=0.1):
         super(FC_Q, self).__init__()
         self.n_act = n_act
         self.input_c = input_c
@@ -72,7 +72,7 @@ class FC_Q(nn.Module):
             fc_in = hidden_size + input_c
 
         fc_layers = [i for _ in range(n_layers) for i in
-                     (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size), nn.ReLU())]
+                     (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size, momentum=momentum), nn.ReLU())]
 
         self.fc = nn.Sequential(nn.Linear(fc_in, hidden_size),
                                 nn.ReLU(),
@@ -199,6 +199,7 @@ class DQNAgent(object):
         self.n_layers = kwargs.get('n_layers', 6)
         self.lstm = kwargs.get('lstm', False)
         self.game = kwargs.get('game', 'game')
+        self.momentum = kwargs.get('momentum', 0.1)
 
         if self.lstm:
             model_in_channel = 3 if self.input_rgb else input_c
@@ -207,7 +208,7 @@ class DQNAgent(object):
 
         self.policy_model = CNN_Q(n_act, input_c=model_in_channel, hidden_size=self.hidden_size).to(device) \
             if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
-                                   lstm=self.lstm, n_layers=self.n_layers).to(device)
+                                   lstm=self.lstm, momentum=self.momentum, n_layers=self.n_layers).to(device)
         logger.info(f'Num paras={self.policy_model.num_paras()}')
         self.target_model = None
         self.training = training
@@ -215,16 +216,17 @@ class DQNAgent(object):
         if training:
             self.target_model = CNN_Q(n_act, input_c=model_in_channel, hidden_size=self.hidden_size).to(device) \
                 if input_rgb else FC_Q(n_act=n_act, input_c=model_in_channel, hidden_size=self.hidden_size,
-                                       lstm=self.lstm, n_layers=self.n_layers).to(device)
+                                       lstm=self.lstm, momentum=self.momentum, n_layers=self.n_layers).to(device)
             self.target_model.eval()
 
-        try:
-            self.target_model.load_state_dict(
-                torch.load(f'models/dqn_{self.game}_v0.pth', map_location=torch.device('cpu')))
-            logger.info(f'Successfully loaded checkpoint = models/dqn_{self.game}_v0.pth')
+        if self.target_model:
+            try:
+                self.target_model.load_state_dict(
+                    torch.load(f'models/dqn_{self.game}_v0.pth', map_location=torch.device('cpu')))
+                logger.info(f'Successfully loaded checkpoint = models/dqn_{self.game}_v0.pth')
 
-        except Exception as ex:
-            print(ex)
+            except Exception as ex:
+                logger.debug(ex)
 
         self.sync_model()
 
@@ -381,7 +383,7 @@ if __name__ == '__main__':
     frame_freq = 1
     history_len = 5
 
-    env = gym.make('Breakout-v0')  # 'SpaceInvaders-v0'
+    env = gym.make('Breakout-ram-v4')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
     agent = DQNAgent(n_act=env.action_space.n,

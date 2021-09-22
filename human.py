@@ -7,7 +7,7 @@ from agents.human import HumanAtariAgent
 # MontezumaRevenge-v0, Breakout-v4
 
 async def main():
-    env = gym.make('Breakout-v4')
+    env = gym.make('MontezumaRevenge-v4')
     obs = env.reset()  # reset for each new trial
     LA = list(range(env.action_space.n))
     state_dict = {

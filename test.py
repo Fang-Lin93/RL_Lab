@@ -7,27 +7,31 @@ from loguru import logger
 from agents.dqn import DQNAgent
 
 
-def eva(game: str, max_episode=1000, model_file: str = 'v0'):
-    with open(f'results/{game}.pickle', 'rb') as file:
-        model_config = pickle.load(file)
-    for k, v in model_config.items():
+def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
+    with open(f'checkpoints/{ckp}_ckp.pickle', 'rb') as file:
+        checkpoints = pickle.load(file)
+
+    config = checkpoints['config']
+
+
+    for k, v in config.items():
         logger.info(f'{k}={v}')
 
-    env = gym.make(game)
+    env = gym.make(config['game'])
     obs = env.reset()
-    history = deque([obs], maxlen=model_config['history_len'])
+    history = deque([obs], maxlen=config['history_len'])
     la = list(range(env.action_space.n))
 
-    # for _ in range(random.randint(1, model_config['no_op_max'])):
+    # for _ in range(random.randint(1, config['no_op_max'])):
     #     obs, _, _, _ = env.step(1)  # force game start !
     #     history.append(obs)
 
-    agent = DQNAgent(**model_config)
+    agent = DQNAgent(**config)
     agent.training = False
     agent.eps_greedy = -1
 
     try:
-        agent.policy_model.load_model(f'{game}_{model_file}')
+        agent.policy_model.load_state_dict(checkpoints['model_dict']['target'])
     except Exception as exp:
         raise ValueError(f'{exp}')
 
@@ -70,6 +74,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DQN test')
 
     parser.add_argument('--game', default='Breakout-v4', type=str)
+    parser.add_argument('--ckp', default='run', type=str)
     # SpaceInvaders-ram-v4 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
-    eva(game=args.game)
+    eva(ckp=args.ckp)
