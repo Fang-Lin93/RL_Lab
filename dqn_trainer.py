@@ -112,12 +112,10 @@ def main():
 
     agent = DQNAgent(training=True, **config)
 
-    try:
+    if args.load_ckp:
         agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))  #checkpoint['model_dict']['policy'])
         agent.target_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
         logger.info('Successfully loaded models weights')
-    except Exception as exp:
-        logger.info(exp)
 
     # if checkpoint['model_dict']:
     #     agent.policy_model.load_state_dict(checkpoint['model_dict']['policy'])
@@ -139,9 +137,7 @@ def main():
         agent.reset()
 
         # anneal epsilon greedy
-        agent.eps_greedy = config['eps_greedy']
-        # agent.eps_greedy = max(config['eps_greedy'],
-        #                        1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
+        agent.eps_greedy = max(config['eps_greedy'], 1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
 
         state_dict = {
             'obs': history,
@@ -192,21 +188,14 @@ def main():
         # update policy model as the target
         if episode % config['update_freq'] == 0:
             agent.sync_model()
-            # agent.target_model.save_model(f'{config["game"]}_{config["S"]}')
             if loss:
                 ckp['loss_rec'].append(loss)
             ckp['reward_rec'].append(score)
 
             ckp.update(episode=episode)
 
-            # checkpoint.update(model_dict={'policy': agent.policy_model.state_dict(),
-            #                               'target': agent.target_model.state_dict()})
-            # checkpoint.update(episode=episode)
-            # checkpoint.update(reward=score_rec)
-            # checkpoint.update(loss=loss_rec)
         with open(f'{path}/ckp.pickle', 'wb') as file:
             pickle.dump(ckp, file)
-
         torch.save(agent.policy_model.state_dict(), f'{path}/policy.pth')
         torch.save(agent.target_model.state_dict(), f'{path}/target.pth')
 

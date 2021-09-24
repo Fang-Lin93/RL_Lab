@@ -3,15 +3,18 @@ import gym
 import pickle
 import random
 from collections import deque
+
+import torch
 from loguru import logger
 from agents.dqn import DQNAgent
 
 
 def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
-    with open(f'checkpoints/{ckp}_ckp.pickle', 'rb') as file:
+    with open(f'checkpoints/{ckp}/ckp.pickle', 'rb') as file:
         checkpoints = pickle.load(file)
 
-    config = checkpoints['config']
+    with open(f'checkpoints/{ckp}/config.pickle', 'rb') as file:
+        config = pickle.load(file)
 
     logger.info(f'Episode={checkpoints["episode"]}')
 
@@ -23,16 +26,12 @@ def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
     history = deque([obs], maxlen=config['history_len'])
     la = list(range(env.action_space.n))
 
-    # for _ in range(random.randint(1, config['no_op_max'])):
-    #     obs, _, _, _ = env.step(1)  # force game start !
-    #     history.append(obs)
-
     agent = DQNAgent(**config)
     agent.training = False
     agent.eps_greedy = -1
 
     try:
-        agent.policy_model.load_state_dict(checkpoints['model_dict']['target'])
+        agent.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
         agent.policy_model.eval()
     except Exception as exp:
         raise ValueError(f'{exp}')
@@ -75,8 +74,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    # parser.add_argument('--game', default='Breakout-v4', type=str)
     parser.add_argument('--ckp', default='run', type=str)
-    # SpaceInvaders-ram-v4 Breakout-v4 CartPole-v1  Breakout-ramNoFrameskip-v4 Breakout-ram-v4
     args = parser.parse_args()
     eva(ckp=args.ckp)
