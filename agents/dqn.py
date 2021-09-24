@@ -72,7 +72,9 @@ class FC_Q(nn.Module):
             fc_in = hidden_size + input_c
 
         fc_layers = [i for _ in range(n_layers) for i in
-                     (nn.Linear(hidden_size, hidden_size), nn.BatchNorm1d(hidden_size, momentum=momentum), nn.ReLU())]
+                     (nn.Linear(hidden_size, hidden_size),
+                      nn.BatchNorm1d(hidden_size, momentum=momentum, affine=False),
+                      nn.ReLU())]
 
         self.fc = nn.Sequential(nn.Linear(fc_in, hidden_size),
                                 nn.ReLU(),
@@ -93,12 +95,12 @@ class FC_Q(nn.Module):
 
         return self.fc(obs_.view(-1, self.input_c)).view(-1, self.n_act)
 
-    def save_model(self, model_file='v1', path='models/'):
-        torch.save(self.state_dict(), f'{path}dqn_{model_file}.pth')
+    def save_model(self, model_file='v1', path='models'):
+        torch.save(self.state_dict(), f'{path}/dqn_{model_file}.pth')
 
-    def load_model(self, model_file='v0', path='models/'):
+    def load_model(self, model_file='v0', path='models'):
         self.load_state_dict(
-            torch.load(f'{path}dqn_{model_file}.pth', map_location=torch.device('cpu')))
+            torch.load(f'{path}/dqn_{model_file}.pth', map_location=torch.device('cpu')))
 
     def num_paras(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -156,12 +158,12 @@ class CNN_Q(nn.Module):
         # lstm_out, hidden_s = self.rnn(obs_.view(N, L, -1))
         # return self.fc(lstm_out[:, -1, :]).view(-1, self.n_act)
 
-    def save_model(self, model_file='v1', path='models/'):
-        torch.save(self.state_dict(), f'{path}dqn_{model_file}.pth')
+    def save_model(self, model_file='v1', path='models'):
+        torch.save(self.state_dict(), f'{path}/dqn_{model_file}.pth')
 
-    def load_model(self, model_file='v0', path='models/'):
+    def load_model(self, model_file='v0', path='models'):
         self.load_state_dict(
-            torch.load(f'{path}dqn_{model_file}.pth', map_location=torch.device('cpu')))
+            torch.load(f'{path}/dqn_{model_file}.pth', map_location=torch.device('cpu')))
 
     def num_paras(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

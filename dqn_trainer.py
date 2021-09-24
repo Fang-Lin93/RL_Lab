@@ -4,6 +4,7 @@ import time
 import pickle
 import os
 import torch
+from collections import OrderedDict
 from collections import deque
 from matplotlib import pyplot as plt
 from loguru import logger
@@ -37,6 +38,9 @@ parser.add_argument('--explore_step', default=500, type=int, help='anneal greedy
 # model  lstm can easily blow up
 parser.add_argument('--lstm', action='store_true')
 parser.add_argument('--momentum', default=0.1, type=float, help='momentum for BatchNorm')
+"""
+momentum = 0 -> no BN. which has bad performance; momentum too large also gives bad performance
+"""
 parser.add_argument('--hidden_size', default=128, type=int, help='hidden_size')
 parser.add_argument('--n_layers', default=6, type=int, help='num of fc layers')
 parser.add_argument('--gamma', default=0.99, type=float, help='decay factor')
@@ -48,10 +52,10 @@ parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (def
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--max_grad_value', default=1, type=float, help='max_grad_value for clipping grads')
-parser.add_argument('--batch_size', default=64, type=int, help='batch_size')
+parser.add_argument('--batch_size', default=128, type=int, help='batch_size')
 parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
 parser.add_argument('--train_freq', default=5, type=int, help='train every ? frame')
-parser.add_argument('--update_freq', default=20, type=int, help='update every ? EPISODE')
+parser.add_argument('--update_freq', default=10, type=int, help='update every ? EPISODE')
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
@@ -67,10 +71,15 @@ args = parser.parse_args()
 
 
 def main():
+    path = f'checkpoints/{args.S}'
+    if not os.path.exists(path):
+        os.mkdir(path)
+
     if args.load_ckp:
-        with open(f'checkpoints/{args.S}_ckp.pickle', 'rb') as handle:
-            checkpoint = pickle.load(handle)
-        config = checkpoint['config']
+        with open(f'{path}/config.pickle', 'rb') as handle:
+            config = pickle.load(handle)
+        with open(f'{path}/ckp.pickle', 'rb') as handle:
+            ckp = pickle.load(handle)
 
         logger.info('Loading checkpoints...')
 
@@ -83,11 +92,6 @@ def main():
             logger.info(f'{k}={v}')
         env = gym.make(config['game'])
     else:
-        checkpoint = {'episode': 0,
-                      'config': {},
-                      'reward': [],
-                      'loss': [],
-                      'model_dict': None}
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
@@ -95,26 +99,38 @@ def main():
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
-        if not os.path.exists('checkpoints/'):
-            os.mkdir('checkpoints/')
+        with open(f'{path}/config.pickle', 'wb') as file:
+            pickle.dump(config, file)
 
-        # with open(f'results/{args.game}.pickle', 'wb') as handle:
-        #     pickle.dump(config, handle)
-        checkpoint.update(config=config)
+        ckp = {
+            'episode': 0,
+            'reward_rec': [],
+            'loss_rec': [],
+        }
+        with open(f'{path}/ckp.pickle', 'wb') as file:
+            pickle.dump(ckp, file)
 
     agent = DQNAgent(training=True, **config)
-    if checkpoint['model_dict']:
-        agent.policy_model.load_state_dict(checkpoint['model_dict']['policy'])
-        agent.target_model.load_state_dict(checkpoint['model_dict']['target'])
 
-    score_rec = checkpoint['reward']
-    loss_rec = checkpoint['loss']
+    try:
+        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))  #checkpoint['model_dict']['policy'])
+        agent.target_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
+        logger.info('Successfully loaded models weights')
+    except Exception as exp:
+        logger.info(exp)
+
+    # if checkpoint['model_dict']:
+    #     agent.policy_model.load_state_dict(checkpoint['model_dict']['policy'])
+    #     agent.target_model.load_state_dict(checkpoint['model_dict']['target'])
+
+    # score_rec = checkpoint['reward']
+    # loss_rec = checkpoint['loss']
     loss = None
     step = 0
     la = list(range(env.action_space.n))
     s_time = time.time()
 
-    min_episode = checkpoint['episode']
+    min_episode = ckp['episode']
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
@@ -178,19 +194,23 @@ def main():
             agent.sync_model()
             # agent.target_model.save_model(f'{config["game"]}_{config["S"]}')
             if loss:
-                loss_rec.append(loss)
-            score_rec.append(score)
+                ckp['loss_rec'].append(loss)
+            ckp['reward_rec'].append(score)
 
-            checkpoint.update(model_dict={'policy': agent.policy_model.state_dict(),
-                                          'target': agent.target_model.state_dict()})
-            checkpoint.update(episode=episode)
-            checkpoint.update(reward=score_rec)
-            checkpoint.update(loss=loss_rec)
+            ckp.update(episode=episode)
 
-        with open(f'checkpoints/{config["S"]}_ckp.pickle', 'wb') as handle:
-            pickle.dump(checkpoint, handle)
+            # checkpoint.update(model_dict={'policy': agent.policy_model.state_dict(),
+            #                               'target': agent.target_model.state_dict()})
+            # checkpoint.update(episode=episode)
+            # checkpoint.update(reward=score_rec)
+            # checkpoint.update(loss=loss_rec)
+        with open(f'{path}/ckp.pickle', 'wb') as file:
+            pickle.dump(ckp, file)
 
-    plt.plot(score_rec, label='score')
+        torch.save(agent.policy_model.state_dict(), f'{path}/policy.pth')
+        torch.save(agent.target_model.state_dict(), f'{path}/target.pth')
+
+    plt.plot(ckp['reward_rec'], label='score')
     plt.savefig(f'results/QDN_{config["game"]}.png')
     plt.legend()
     plt.show()
