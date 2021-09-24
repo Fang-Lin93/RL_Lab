@@ -64,6 +64,7 @@ class FC_Q(nn.Module):
         self.input_c = input_c
         self.hidden_size = hidden_size
         self.lstm = lstm
+        self.momentum = momentum
         self.rnn = None
 
         fc_in = input_c
@@ -73,7 +74,7 @@ class FC_Q(nn.Module):
 
         fc_layers = [i for _ in range(n_layers) for i in
                      (nn.Linear(hidden_size, hidden_size),
-                      nn.BatchNorm1d(hidden_size, momentum=momentum, affine=False),
+                      nn.BatchNorm1d(hidden_size, momentum=self.momentum, affine=False),
                       nn.ReLU())]
 
         self.fc = nn.Sequential(nn.Linear(fc_in, hidden_size),
@@ -265,6 +266,7 @@ class DQNAgent(object):
         obs_tensor = self.process_image_obs(obs_) if self.input_rgb else self.process_vec_obs(obs_)
 
         self.policy_model.eval()
+
         with torch.no_grad():
             pred_q = self.policy_model(obs_tensor.to(device))
             logger.debug(pred_q)

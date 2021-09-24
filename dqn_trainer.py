@@ -113,16 +113,10 @@ def main():
     agent = DQNAgent(training=True, **config)
 
     if args.load_ckp:
-        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))  #checkpoint['model_dict']['policy'])
+        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))
         agent.target_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
         logger.info('Successfully loaded models weights')
 
-    # if checkpoint['model_dict']:
-    #     agent.policy_model.load_state_dict(checkpoint['model_dict']['policy'])
-    #     agent.target_model.load_state_dict(checkpoint['model_dict']['target'])
-
-    # score_rec = checkpoint['reward']
-    # loss_rec = checkpoint['loss']
     loss = None
     step = 0
     la = list(range(env.action_space.n))
