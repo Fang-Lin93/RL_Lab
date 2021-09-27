@@ -4,6 +4,7 @@ import time
 import pickle
 import os
 import torch
+import random
 from collections import OrderedDict
 from collections import deque
 from matplotlib import pyplot as plt
@@ -62,7 +63,8 @@ parser.add_argument('--update_freq', default=10, type=int, help='update every ? 
 parser.add_argument('--game', default='Breakout-v4', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
-parser.add_argument('--render', default='rgb_array', type=str, help='where to show? (human/rgb_array)')
+parser.add_argument('--human', action='store_true')  #, default='rgb_array', type=str, help='where to show? (human/rgb_array)')
+parser.add_argument('--no_op_max', default=10, type=int, help='no cations at the beginning')
 
 #  BeamRider-ram-v4 Breakout-v0  SpaceInvaders-v0  CartPole-v0 BreakoutNoFrameskip-v4 Breakout-v4
 
@@ -121,7 +123,6 @@ def main():
     step = 0
     la = list(range(env.action_space.n))
     s_time = time.time()
-
     min_episode = ckp['episode']
 
     for episode in range(min_episode, config['N_episodes']):
@@ -140,9 +141,15 @@ def main():
             'done': False,
         }
         t, score = 0, 0
+
+        # no-op
+        for _ in range(random.randint(1, args.no_op_max)):
+            obs, _, _, _ = env.step(random.choice(la))  # force game start !
+            history.append(obs)
+
         while True:
             step += 1
-            env.render(config['render'])
+            env.render('human' if config['human'] else 'rgb_array')
             action = agent.step(state_dict)
             obs, reward, done, info = env.step(action)
 
