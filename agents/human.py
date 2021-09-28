@@ -1,14 +1,27 @@
 import keyboard
 import time
 
-from consts import KEYBOARD_MAP
+# W, S, A, D, F as directions, I,K as angle_fires
 
-
-# async def keyboard_act():
-#     for key, v in KEYBOARD_MAP.items():
-#         if keyboard.is_pressed(key):
-#             print(f'You Pressed {key}')
-#             return v
+KEYBOARD_MAP = {
+     'n': 0,
+     'f': 1,
+     'w': 2,
+     'd': 3,
+     'a': 4,
+     's': 5,
+     'e': 6,
+     'q': 7,
+     'c': 8,
+     'z': 9,
+     'i': 10,
+     'l': 11,
+     'j': 12,
+     'k': 13,
+     'o': 14,
+     'u': 15,
+     ',': 16,
+     'm': 17}
 
 
 class HumanAtariAgent(object):
@@ -19,8 +32,7 @@ class HumanAtariAgent(object):
     def __init__(self):
         self.name = 'human'
 
-    async def step(self, state: dict = None):
-        la = state['la']
+    async def step(self, la: list = None):
         act = self.keyboard_act()
         if act in la:
             return act
@@ -35,29 +47,29 @@ class HumanAtariAgent(object):
         return 0
 
 
-#
 if __name__ == '__main__':
-
     import gym
     import asyncio
+    import argparse
+    parser = argparse.ArgumentParser(description='Human')
+    parser.add_argument('--g', default='MontezumaRevenge-v0', type=str)
 
-
-    # env = gym.make('CartPole-v0')
+    args = parser.parse_args()
 
     async def main():
-        env = gym.make('MontezumaRevenge-v0')
-        env.reset()  # reset for each new trial
+        env = gym.make(args.g)
+        env.reset()
+        la = list(range(env.action_space.n))
         t = 0
         agent = HumanAtariAgent()
         while True:
             env.render()
-            action = await agent.step()
+            action = await agent.step(la)
             obs, reward, done, info = env.step(action)
             t += 1
             if done:
                 print("Episode finished after {} timesteps".format(t + 1))
                 break
             time.sleep(0.05)
-
-
     asyncio.run(main())
+

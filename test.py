@@ -9,7 +9,8 @@ from loguru import logger
 from agents.dqn import DQNAgent
 
 
-def eva(ckp: str, max_episode=1000, model_file: str = 'v0'):
+# TODO: agent loading ckp methods
+def eva(ckp: str, max_episode=1000):
     with open(f'checkpoints/{ckp}/ckp.pickle', 'rb') as file:
         checkpoints = pickle.load(file)
 
