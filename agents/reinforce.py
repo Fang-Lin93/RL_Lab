@@ -4,7 +4,7 @@ from loguru import logger
 from torch.nn import functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch import FloatTensor, LongTensor
-from .basic import ReplayBuffer, Agent
+from .basic import ReplayBuffer, BaseAgent
 from .utils import process_image_obs, process_vec_obs
 from torch.distributions import Categorical
 
@@ -18,13 +18,13 @@ class Buffer(ReplayBuffer):
         return (self.data[i:i + batch_size] for i in range(0, len(self), batch_size))
 
 
-class REINFO_Agent(Agent):
+class REINFOCE_Agent(BaseAgent):
     """
     policy gradient with Q-value estimated by MC return (with base-line)
     """
 
     def __init__(self, **kwargs):
-        super().__init__(name='dqn', **kwargs)
+        super().__init__(name='reinforce', **kwargs)
 
         self.rb = Buffer(capacity=kwargs.get('buffer_size', 10000))
         self.policy_model = self.init_model().to(device)
@@ -90,7 +90,6 @@ class REINFO_Agent(Agent):
         """
         train POLICY model !!!
         """
-        # self.process_trajectory()
 
         if len(self.rb) < self.batch_size:
             return
@@ -133,10 +132,11 @@ class REINFO_Agent(Agent):
             clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
             opt_policy.step()
 
-            t_v_loss += v_loss.item()*len(batch)
-            t_p_loss += p_loss.item()*len(batch)
+            t_v_loss += v_loss.item() * len(batch)
+            t_p_loss += p_loss.item() * len(batch)
             counts += len(batch)
-        self.rb.cla()
+
+        self.rb.cla()  # TODO cla immediately ?
         t_v_loss /= counts
         t_p_loss /= counts
         logger.info(f'ValueLoss={t_v_loss}, PolicyLoss={t_p_loss}')
@@ -152,9 +152,9 @@ if __name__ == '__main__':
     env = gym.make('CartPole-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
-    agent = REINFO_Agent(n_act=env.action_space.n,
-                         history_len=history_len,
-                         input_c=env.observation_space.shape[0])
+    agent = REINFOCE_Agent(n_act=env.action_space.n,
+                           history_len=history_len,
+                           input_c=env.observation_space.shape[0])
 
     obs = env.reset()
     history = [obs]
@@ -199,4 +199,3 @@ if __name__ == '__main__':
             break
 
     agent.backup()
-

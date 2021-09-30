@@ -5,7 +5,7 @@ from loguru import logger
 from torch.nn import functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch import FloatTensor, LongTensor
-from .basic import ReplayBuffer, Agent
+from .basic import ReplayBuffer, BaseAgent
 from .utils import process_image_obs, process_vec_obs
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -17,7 +17,7 @@ class Buffer(ReplayBuffer):
         return random.sample(self.data, batch_size)
 
 
-class DQNAgent(Agent):
+class DQNAgent(BaseAgent):
     """
     TD: TD-target
     MC: MC-target

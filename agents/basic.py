@@ -52,7 +52,7 @@ class ReplayBuffer(object):
     is_full = property(__get_is_full)
 
 
-class Agent(object):
+class BaseAgent(object):
     def __init__(self, **kwargs):
         self.name = kwargs.get('name', '')
 
