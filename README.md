@@ -13,7 +13,7 @@ Have fun!
 |-- RL_lab
 	|-- README.md
 	|-- env		// customized env's 
-	|	|-- ??		// 模拟器
+	|	|-- ??
 	    |--
 	|-- agents	// agents files
 	    |-- human.py // you can play atari game here for fun (WASD... check the keyboard mapping plz)
