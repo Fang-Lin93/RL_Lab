@@ -4,9 +4,9 @@ from matplotlib import pyplot as plt
 
 
 # game = 'Breakout-v4'  # 'SpaceInvaders-ram-v4'  'CartPole-v0'  Breakout-v4
-ckp_name = 'cp_long_BN'
+ckp_name = 'ts'
 
-with open(f'checkpoints/{ckp_name}/ckp.pickle', 'rb') as file:
+with open(f'checkpoints/{ckp_name}/performance.pickle', 'rb') as file:
     ckp = pickle.load(file)
 
 with open(f'checkpoints/{ckp_name}/config.pickle', 'rb') as file:

@@ -1,5 +1,4 @@
 import random
-
 import torch
 from loguru import logger
 from torch.nn import functional as F
@@ -7,6 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch import FloatTensor, LongTensor
 from .basic import ReplayBuffer, Agent
 from .utils import process_image_obs, process_vec_obs
+from torch.distributions import Categorical
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -14,34 +14,31 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 class Buffer(ReplayBuffer):
 
     def sample(self, batch_size):
-        return random.sample(self.data, batch_size)
+        random.shuffle(self.data)
+        return (self.data[i:i + batch_size] for i in range(0, len(self), batch_size))
 
 
-class DQNAgent(Agent):
+class REINFO_Agent(Agent):
     """
-    TD: TD-target
-    MC: MC-target
-
-    Policy_model: newer ongoing model
-    Target_model: older mostly fixed model
+    policy gradient with Q-value estimated by MC return (with base-line)
     """
 
-    def __init__(self, eps_greedy: float = -1, target_type='TD', **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(name='dqn', **kwargs)
 
-        self.eps_greedy = eps_greedy
-        self.target_type = target_type
         self.rb = Buffer(capacity=kwargs.get('buffer_size', 10000))
-
         self.policy_model = self.init_model().to(device)
 
-        logger.info(f'Num paras={self.policy_model.num_paras()}')
-        self.target_model = None
+        self.base_line = self.init_model(out_c=1).to(device)
+
+        logger.info(f'Num paras(policy)={self.policy_model.num_paras()}')
+
+        self.policy_model.eval()
 
         if self.training:
-            self.target_model = self.init_model().to(device)
-            self.target_model.eval()
-        self.sync_model()
+            self.base_line = self.init_model(out_c=1)
+            self.base_line.train()
+            logger.info(f'Num paras(baseline)={self.base_line.num_paras()}')
 
     def act(self, state: dict):
 
@@ -53,10 +50,7 @@ class DQNAgent(Agent):
 
         action = None
         if not finished:
-            if self.eps_greedy > 0 and random.random() < self.eps_greedy:
-                action = random.choice(la)
-            else:
-                action = self.forward(obs_tensor)
+            action = self.forward(obs_tensor)
 
         # save trajectories
         if self.training:
@@ -67,11 +61,10 @@ class DQNAgent(Agent):
     def forward(self, obs_tensor):
         self.policy_model.eval()
         with torch.no_grad():
-            pred_q = self.policy_model(obs_tensor.to(device))
-            logger.debug(pred_q)
-            return pred_q.view(-1).argmax().item()  # max part of Q-target
+            prob = Categorical(logits=self.policy_model(obs_tensor.to(device)).view(-1))
+            return prob.sample().item()  # max part of Q-target
 
-    def backup(self, final_payoff: float = 0):
+    def backup(self):
         """
         If Q-MC, using MC-target, otherwise using TD target
 
@@ -79,16 +72,16 @@ class DQNAgent(Agent):
         I can update the paras in the final stage (use total loss)
         """
         if self.trajectory:
-            v = final_payoff
+            v = 0
             for i in range(len(self.trajectory) - 2, 0, -3):
-                if self.target_type == 'MC':  # simply ignore immediate rewards
-                    self.trajectory[i] = v
-                    v *= self.gamma
+                v += self.trajectory[i]  # immediate reward
                 # o, a, r, next_o
                 self.rb.add((self.trajectory[i - 2],
                              self.trajectory[i - 1],
                              self.trajectory[i],
-                             self.trajectory[i + 1]))
+                             self.gamma ** (i // 3)))  # discounted to the starting point
+
+                v *= self.gamma
 
         self.trajectory = []
         return
@@ -104,38 +97,50 @@ class DQNAgent(Agent):
 
         self.policy_model.train()
 
-        opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
+        opt_policy = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
+        opt_base = torch.optim.RMSprop(self.base_line.parameters(), lr=self.lr, eps=self.eps)
 
-        logger.debug(  # self.rb.sample()
-            f'====== Train Q net using {self.target_type} target (obs={len(self.rb)}) ======')
+        logger.debug(f'====== Train REINFORCE (obs={len(self.rb)}) ======')
 
-        sample = self.rb.sample(self.batch_size)
-        o, a, r, n_o = zip(*sample)
-        o, a, r, n_o = torch.stack(o), LongTensor(a), FloatTensor(r), torch.stack(n_o)
+        t_v_loss, t_p_loss, counts = 0, 0, 0
 
-        if self.target_type == 'TD':
-            # TD target
-            with torch.no_grad():
-                r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
+        for batch in self.rb.sample(self.batch_size):
 
-        q_ = self.policy_model(o.to(device))  # policy model on the current state!
+            opt_policy.zero_grad()
+            opt_base.zero_grad()
+            o, a, r, d = [], [], [], []
+            for item in batch:
+                o.append(item[0])
+                a.append(item[1])
+                r.append(item[2])
+                d.append(item[3])
 
-        opt.zero_grad()
+            o, a, r, d = torch.stack(o), LongTensor(a), FloatTensor(r), FloatTensor(d)
+            # train value baseline
+            self.base_line.train()
+            pred_v = self.base_line(o.to(device)).view(-1)
+            v_loss = F.smooth_l1_loss(pred_v.to(device), r.to(device))
+            v_loss.backward()
+            clip_grad_norm_(self.base_line.parameters(), self.max_grad_norm)
+            opt_base.step()
 
-        loss = F.smooth_l1_loss(q_[range(q_.size(0)), a.to(device)], r.to(device))
-        loss.backward()
+            # train policies
+            self.base_line.eval()
 
-        clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
-        opt.step()
+            critic = (r - self.base_line(o.to(device)).view(-1).detach()) * d
+            p_loss = (critic * self.policy_model(o).softmax(dim=-1)[range(o.size(0)), a].log()).mean()
+            p_loss.backward()
+            clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)
+            opt_policy.step()
 
-        logger.debug(f'Loss = {loss.item():.6f}')
-        self.policy_model.eval()
-        return loss.item()
-
-    def sync_model(self):
-        if not self.target_model:
-            return
-        self.target_model.load_state_dict(self.policy_model.state_dict())
+            t_v_loss += v_loss.item()*len(batch)
+            t_p_loss += p_loss.item()*len(batch)
+            counts += len(batch)
+        self.rb.cla()
+        t_v_loss /= counts
+        t_p_loss /= counts
+        logger.info(f'ValueLoss={t_v_loss}, PolicyLoss={t_p_loss}')
+        return t_v_loss, t_p_loss
 
 
 if __name__ == '__main__':
@@ -144,20 +149,14 @@ if __name__ == '__main__':
     frame_freq = 1
     history_len = 5
 
-    env = gym.make('Breakout-ram-v4')  # 'SpaceInvaders-v0'
+    env = gym.make('CartPole-v0')  # 'SpaceInvaders-v0'
     target = 'TD'
     # env = gym.make('Breakout-v0')
-    agent = DQNAgent(n_act=env.action_space.n,
-                     training=True,
-                     eps_greedy=0.1,
-                     target_type=target,
-                     input_rgb=True,
-                     history_len=history_len,
-                     input_c=env.observation_space.shape[0],
-                     lstm=False)
+    agent = REINFO_Agent(n_act=env.action_space.n,
+                         history_len=history_len,
+                         input_c=env.observation_space.shape[0])
 
     obs = env.reset()
-    agent.backup()
     history = [obs]
     # traj = [agent.process_vec_obs(history)]
     state_dict = {
@@ -174,7 +173,8 @@ if __name__ == '__main__':
             act = agent.act(state_dict)
             frame = frame_freq - 1
             # traj.append(action)
-        obs, reward, done, info = env.act(act)
+        obs, reward, done, info = env.step(act)
+        print(reward)
         history.append(obs)
         if len(history) > history_len:
             history.pop(0)
@@ -198,7 +198,5 @@ if __name__ == '__main__':
             logger.info(f"Episode finished after {t} time steps, total reward={score}")
             break
 
-    if target == 'TD':
-        agent.backup(final_payoff=reward)
-    if target == 'MC':
-        agent.backup(final_payoff=score)
+    agent.backup()
+

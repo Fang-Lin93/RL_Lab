@@ -22,7 +22,7 @@ async def async_main():
     while True:
         env.render()
         action = await agent.step(state)
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, info = env.act(action)
         state = {
             'obs': [obs],
             'la': list(range(env.action_space.n)),
@@ -47,8 +47,8 @@ def main(agent, max_episode=1000):
     t = 0
     while True:
         env.render()
-        action = agent.step(state)
-        obs, reward, done, info = env.step(action)
+        action = agent.act(state)
+        obs, reward, done, info = env.act(action)
         state = {
             'obs': [obs],
             'la': la,
@@ -57,7 +57,7 @@ def main(agent, max_episode=1000):
         print(f'Action={action}, R_t+1={reward}')
         t += 1
         if done or t > max_episode:
-            agent.step(state)  # backup the final state
+            agent.act(state)  # backup the final state
             print("Episode finished after {} timesteps".format(t + 1))
             break
 

@@ -23,7 +23,7 @@ async def main():
     while True:
         env.render()
         action = await agent.step(state_dict)
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, info = env.act(action)
         t += 1
         state_dict = {
             'obs': obs,

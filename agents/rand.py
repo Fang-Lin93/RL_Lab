@@ -8,6 +8,6 @@ class RandomAgent(object):
         self.name = 'random_agent'
 
     @staticmethod
-    def step(state: dict):
+    def act(state: dict):
         return random.choice(state['la'])
 

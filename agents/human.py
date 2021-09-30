@@ -32,7 +32,7 @@ class HumanAtariAgent(object):
     def __init__(self):
         self.name = 'human'
 
-    async def step(self, la: list = None):
+    async def act(self, la: list = None):
         act = self.keyboard_act()
         if act in la:
             return act
@@ -64,8 +64,8 @@ if __name__ == '__main__':
         agent = HumanAtariAgent()
         while True:
             env.render()
-            action = await agent.step(la)
-            obs, reward, done, info = env.step(action)
+            action = await agent.act(la)
+            obs, reward, done, info = env.act(action)
             t += 1
             if done:
                 print("Episode finished after {} timesteps".format(t + 1))

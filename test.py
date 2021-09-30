@@ -11,7 +11,7 @@ from agents.dqn import DQNAgent
 
 # TODO: agent loading ckp methods
 def eva(ckp: str, max_episode=1000):
-    with open(f'checkpoints/{ckp}/ckp.pickle', 'rb') as file:
+    with open(f'checkpoints/{ckp}/performance.pickle', 'rb') as file:
         checkpoints = pickle.load(file)
 
     with open(f'checkpoints/{ckp}/config.pickle', 'rb') as file:
@@ -47,7 +47,7 @@ def eva(ckp: str, max_episode=1000):
 
     while True:
         env.render()
-        action = agent.step(state_dict)
+        action = agent.act(state_dict)
 
         obs, reward, done, info = env.step(action)
 
@@ -65,7 +65,7 @@ def eva(ckp: str, max_episode=1000):
         t += 1
         if done or t > max_episode:
             state_dict['done'] = True
-            agent.step(state_dict)
+            agent.act(state_dict)
             logger.info(f"Episode finished after {t + 1} "
                         f"time steps with reward = {score} ")
             break
