@@ -86,7 +86,7 @@ if __name__ == '__main__':
         while True:
             env.render()
             action = await agent.act(la)
-            obs, reward, done, info = env.act(action)
+            obs, reward, done, info = env.step(action)
             t += 1
             if done:
                 print("Episode finished after {} timesteps".format(t + 1))
