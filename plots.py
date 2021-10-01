@@ -4,30 +4,27 @@ from matplotlib import pyplot as plt
 
 
 # game = 'Breakout-v4'  # 'SpaceInvaders-ram-v4'  'CartPole-v0'  Breakout-v4
-ckp_name = 'cppg'
+def plot_ckp(ckp_name):
+    with open(f'checkpoints/{ckp_name}/performance.pickle', 'rb') as file:
+        ckp = pickle.load(file)
 
-with open(f'checkpoints/{ckp_name}/performance.pickle', 'rb') as file:
-    ckp = pickle.load(file)
+    with open(f'checkpoints/{ckp_name}/config.pickle', 'rb') as file:
+        config = pickle.load(file)
 
-with open(f'checkpoints/{ckp_name}/config.pickle', 'rb') as file:
-    config = pickle.load(file)
+    x = [round(_ / 60, 2) for _ in ckp['time']]
+    del ckp['episode'], ckp['time'], ckp['start_time']
 
-# loss, reward = ckp['loss_rec'], ckp['reward_rec']
+    fig, ax = plt.subplots(len(ckp), 1, figsize=(10, 8 + len(ckp)))
+    ax[0].set_title(f'{config["game"]}_{config["S"]}')
+    for i, (k, v) in enumerate(ckp.items()):
+        ax[i].plot(x, v, label=k)
+        ax[i].set_xlabel('Time used (in min)')
+        ax[i].legend()
+    fig.show()
 
-fig, ax = plt.subplots(len(ckp)-1, 1, figsize=(10, 10 + len(ckp)))
-ax[0].set_title(config['game'] + config['S'])
-del ckp['episode']
-for i, (k, v) in enumerate(ckp.items()):
 
-    ax[i].plot(v, label=k)
-    ax[i].set_xlabel('Num_updates')
-    ax[i].legend()
-    # ax[1].plot(reward, label='reward')
-    # ax[0].set_xlabel('Num_updates')
-    # ax[1].set_xlabel('Num_updates')
-    # ax[0].legend()
-    # ax[1].legend()
-fig.show()
+if __name__ == '__main__':
+    plot_ckp('cppg')
 
 
 

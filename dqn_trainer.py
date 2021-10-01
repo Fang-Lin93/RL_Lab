@@ -104,6 +104,8 @@ def main():
 
         performance = {
             'episode': 0,
+            'start_time': time.time(),
+            'time': [],
             'reward_rec': [],
             'loss_rec': [],
         }
@@ -122,6 +124,7 @@ def main():
     s_time = time.time()
     min_episode = performance['episode']
     max_len = config['max_len']
+    start_time = performance['start_time']
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
@@ -187,9 +190,10 @@ def main():
         # update policy model as the target
         if episode % config['update_freq'] == 0:
             agent.sync_model()
-            if loss:
-                performance['loss_rec'].append(loss)
+
+            performance['loss_rec'].append(loss)
             performance['reward_rec'].append(score)
+            performance['time'].append(time.time()-start_time)
 
             performance.update(episode=episode)
 

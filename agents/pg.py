@@ -52,7 +52,7 @@ class PGAgent(BaseAgent):
         self.critic = critic
         self.critic_target = critic_target
         if self.training:
-            if self.critic == 'mc':  # base_line
+            if self.critic == 'mc':  # base_line V(s) function
                 self.critic_model = self.init_model(out_c=1).to(device)
             elif self.critic == 'q':  # Q-func
                 self.critic_model = self.init_model().to(device)
@@ -63,7 +63,7 @@ class PGAgent(BaseAgent):
             logger.info(f'Num paras(critic model)={self.critic_model.num_paras()}')
 
         self.num_batches = kwargs.get('num_batches', 10)
-        self.rb = Buffer(capacity=self.num_batches*self.batch_size)
+        self.rb = Buffer(capacity=self.num_batches * self.batch_size)
 
     def act(self, state: dict):
 
@@ -134,6 +134,7 @@ class PGAgent(BaseAgent):
         t_v_loss, t_p_loss, counts = 0, 0, 0
 
         for (o, a, r, n_o, d) in self.rb.sample(self.batch_size):
+
             critic, v_loss = self.train_critic(o, a, r, n_o, d, opt_critic)
 
             opt_policy.zero_grad()
@@ -194,6 +195,17 @@ class PGAgent(BaseAgent):
                 critic = (r - self.critic_model(o.to(device)).view(-1)) * d  # TD
 
             return critic, v_loss.item()
+
+    def load_ckp(self, ckp, training=False):
+        self.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/policy.pth', map_location='cpu'))
+        self.policy_model.eval()
+
+        if training:
+            try:
+                self.critic_model.load_state_dict(torch.load(f'checkpoints/{ckp}/critic.pth', map_location='cpu'))
+                self.policy_model.eval()
+            except Exception as exp:
+                raise ValueError(f'{exp}')
 
 
 if __name__ == '__main__':

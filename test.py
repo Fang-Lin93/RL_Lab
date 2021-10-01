@@ -6,15 +6,15 @@ from collections import deque
 
 import torch
 from loguru import logger
-from agents.dqn import DQNAgent
+from agents import DQNAgent, PGAgent
 
 
 # TODO: agent loading ckp methods
-def eva(ckp: str, max_episode=1000):
-    with open(f'checkpoints/{ckp}/performance.pickle', 'rb') as file:
+def eva(args, max_episode=1000):
+    with open(f'checkpoints/{args.C}/performance.pickle', 'rb') as file:
         checkpoints = pickle.load(file)
 
-    with open(f'checkpoints/{ckp}/config.pickle', 'rb') as file:
+    with open(f'checkpoints/{args.C}/config.pickle', 'rb') as file:
         config = pickle.load(file)
 
     logger.info(f'Episode={checkpoints["episode"]}')
@@ -24,18 +24,26 @@ def eva(ckp: str, max_episode=1000):
 
     env = gym.make(config['game'])
     obs = env.reset()
-    history = deque([obs], maxlen=config['history_len'])
+    history = deque([obs.tolist()+[0]], maxlen=config['history_len'])
     la = list(range(env.action_space.n))
 
-    agent = DQNAgent(**config)
+    if args.A == 'dqn':
+        agent = DQNAgent(**config)
+    elif args.A == 'pg':
+        agent = PGAgent(**config)
+    else:
+        raise ValueError(f'Agent {args.A} not found')
+
     agent.training = False
     agent.eps_greedy = -1
 
-    try:
-        agent.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
-        agent.policy_model.eval()
-    except Exception as exp:
-        raise ValueError(f'{exp}')
+    agent.load_ckp(args.C)
+    #
+    # try:
+    #     agent.policy_model.load_state_dict(torch.load(f'checkpoints/{args.C}/target.pth', map_location='cpu'))
+    #     agent.policy_model.eval()
+    # except Exception as exp:
+    #     raise ValueError(f'{exp}')
 
     state_dict = {
         'obs': history,
@@ -50,8 +58,8 @@ def eva(ckp: str, max_episode=1000):
         action = agent.act(state_dict)
 
         obs, reward, done, info = env.step(action)
-
-        history.append(obs)
+        t += 1
+        history.append(obs.tolist()+[t/max_episode])
 
         state_dict = {
             'obs': history,
@@ -75,6 +83,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DQN test')
 
-    parser.add_argument('--ckp', default='run', type=str)
+    parser.add_argument('--C', default='run', type=str)
+    parser.add_argument('--A', default='dqn', type=str)
     args = parser.parse_args()
-    eva(ckp=args.ckp)
+    eva(args)

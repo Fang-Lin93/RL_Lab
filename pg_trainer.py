@@ -92,6 +92,8 @@ def main():
 
         performance = {
             'episode': 0,
+            'start_time': time.time(),
+            'time': [],
             'reward_rec': [],
             'value_loss': [],
             'policy_loss': [],
@@ -111,6 +113,8 @@ def main():
     s_time = time.time()
     min_episode = performance['episode']
     max_len = config['max_len']
+
+    start_time = performance['start_time']
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
@@ -169,6 +173,7 @@ def main():
             performance['policy_loss'].append(l2)
             agent.rb.cla()
             performance['reward_rec'].append(score)
+            performance['time'].append(time.time()-start_time)
 
         performance.update(episode=episode)
 

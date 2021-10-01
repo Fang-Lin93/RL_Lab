@@ -137,6 +137,21 @@ class DQNAgent(BaseAgent):
             return
         self.target_model.load_state_dict(self.policy_model.state_dict())
 
+    def load_ckp(self, ckp, training=False):
+        if not training:
+            try:
+                self.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
+                self.policy_model.eval()
+            except Exception as exp:
+                raise ValueError(f'{exp}')
+        else:
+            try:
+                self.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/policy.pth', map_location='cpu'))
+                self.target_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
+                self.policy_model.eval()
+            except Exception as exp:
+                raise ValueError(f'{exp}')
+
 
 if __name__ == '__main__':
     import gym

@@ -142,6 +142,11 @@ class BaseAgent(object):
         """
         raise NotImplementedError
 
+    def load_ckp(self, ckp, training=False):
+        """
+        load models from ckp, usually for testing
+        """
+        raise NotImplementedError
 
 class Actor(threading.Thread):
     """
