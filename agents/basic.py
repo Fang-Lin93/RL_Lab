@@ -64,7 +64,7 @@ class BaseAgent(object):
         # general training paras
         self.history_len = kwargs.get('history_len', 5)
         self.batch_size = kwargs.get('batch_size', 128)
-        self.gamma = kwargs.get('gamma', 0.9)
+        self.gamma = kwargs.get('gamma', 0.99)
         self.max_grad_norm = kwargs.get('max_grad_norm', 10)
         self.lr = kwargs.get('lr', 0.0001)
         self.eps = kwargs.get('eps', 1e-5)

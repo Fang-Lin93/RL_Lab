@@ -19,7 +19,7 @@ Have fun!
 	    |-- human.py // you can play atari game here for fun (WASD... check the keyboard mapping plz)
 	    |-- random.py  // random agents
 	    |-- dqn.py
-	    |-- reinforce.py
+	    |-- pg.py  // general policy gradients
 	    |-- ...
 	    |-- networks  // models
 	        |-- naive.py // FC_BN and simple CNN

@@ -106,7 +106,7 @@ class DQNAgent(BaseAgent):
 
         opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
 
-        logger.debug(  # self.rb.sample()
+        logger.debug(
             f'====== Train Q net using {self.target_type} target (obs={len(self.rb)}) ======')
 
         sample = self.rb.sample(self.batch_size)
