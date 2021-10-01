@@ -35,7 +35,6 @@ parser.add_argument('--gamma', default=0.99, type=float, help='decay factor')
 parser.add_argument('--history_len', default=5, type=int, help='length of the history used, left zeros')
 
 
-# training large learning rate can fluctuate! how to prevent fluctuation ? # TODO
 parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (default: 0.0001)')
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
@@ -84,7 +83,7 @@ def main():
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
-                      input_c=env.observation_space.shape[0])
+                      input_c=env.observation_space.shape[0]+1)
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
@@ -111,12 +110,13 @@ def main():
     la = list(range(env.action_space.n))
     s_time = time.time()
     min_episode = performance['episode']
+    max_len = config['max_len']
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
         obs = env.reset()
-        history = deque([obs], maxlen=config['history_len'])
-
+        t, score = 0, 0
+        history = deque([obs.tolist() + [t/max_len]], maxlen=config['history_len'])
         # anneal epsilon greedy
         agent.eps_greedy = max(config['eps_greedy'], 1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
 
@@ -126,20 +126,21 @@ def main():
             'reward': None,
             'done': False,
         }
-        t, score = 0, 0
 
         # no-op
         for _ in range(random.randint(1, args.no_op_max)):
-            obs, _, _, _ = env.step(random.choice(la))  # force game start !
-            history.append(obs)
+            obs, r_, _, _ = env.step(random.choice(la))  # force game start !
+            t += 1
+            score += r_
+            history.append(obs.tolist() + [t/max_len])
 
         while True:
             step += 1
             env.render('human' if config['human'] else 'rgb_array')
             action = agent.act(state_dict)
             obs, reward, done, info = env.step(action)
-
-            history.append(obs)
+            t += 1
+            history.append(obs.tolist() + [t/max_len])
 
             state_dict = {
                 'obs': history,
@@ -150,14 +151,6 @@ def main():
 
             logger.debug(f'Action={action}, R_t+1={reward}')
             score += reward
-            t += 1
-
-            # training
-            if agent.rb.is_full:
-                l1, l2 = agent.train()
-                performance['value_loss'].append(l1)
-                performance['policy_loss'].append(l2)
-                agent.rb.cla()
 
             # end of this episode
             if done or t > config['max_len']:
@@ -169,8 +162,14 @@ def main():
                 break
         agent.backup()
 
-        # update policy model as the target
-        performance['reward_rec'].append(score)
+        # training
+        if agent.rb.is_full:
+            l1, l2 = agent.train()
+            performance['value_loss'].append(l1)
+            performance['policy_loss'].append(l2)
+            agent.rb.cla()
+            performance['reward_rec'].append(score)
+
         performance.update(episode=episode)
 
         with open(f'{path}/performance.pickle', 'wb') as file:

@@ -134,10 +134,9 @@ class PGAgent(BaseAgent):
         t_v_loss, t_p_loss, counts = 0, 0, 0
 
         for (o, a, r, n_o, d) in self.rb.sample(self.batch_size):
-            opt_policy.zero_grad()
-
             critic, v_loss = self.train_critic(o, a, r, n_o, d, opt_critic)
 
+            opt_policy.zero_grad()
             p_loss = - (critic * (self.policy_model(o).softmax(dim=-1)[range(o.size(0)), a]).log()).mean()
             p_loss.backward()
             clip_grad_norm_(self.policy_model.parameters(), self.max_grad_norm)

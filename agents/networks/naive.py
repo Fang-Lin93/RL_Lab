@@ -11,7 +11,7 @@ class FC_BN(nn.Module):
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, output_c: int, input_c: int, hidden_size: int = 32, n_layers: int = 6, lstm=False):
+    def __init__(self, output_c: int, input_c: int, hidden_size: int = 128, n_layers: int = 5, lstm=False):
         super(FC_BN, self).__init__()
         self.output_c = output_c
         self.input_c = input_c

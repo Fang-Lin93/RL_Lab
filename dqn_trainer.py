@@ -95,7 +95,7 @@ def main():
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
-                      input_c=env.observation_space.shape[0])
+                      input_c=env.observation_space.shape[0]+1)
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
@@ -121,11 +121,14 @@ def main():
     la = list(range(env.action_space.n))
     s_time = time.time()
     min_episode = performance['episode']
+    max_len = config['max_len']
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
         obs = env.reset()
-        history = deque([obs], maxlen=config['history_len'])
+        t, score = 0, 0
+
+        history = deque([obs.tolist()+[t/max_len]], maxlen=config['history_len'])
 
         # anneal epsilon greedy
         agent.eps_greedy = max(config['eps_greedy'], 1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
@@ -136,20 +139,20 @@ def main():
             'reward': None,
             'done': False,
         }
-        t, score = 0, 0
-
         # no-op
         for _ in range(random.randint(1, args.no_op_max)):
-            obs, _, _, _ = env.step(random.choice(la))  # force game start !
-            history.append(obs)
+            obs, r_, _, _ = env.step(random.choice(la))  # force game start !
+            score += r_
+            t += 1
+            history.append(obs.tolist()+[t/max_len])
 
         while True:
             step += 1
             env.render('human' if config['human'] else 'rgb_array')
             action = agent.act(state_dict)
             obs, reward, done, info = env.step(action)
-
-            history.append(obs)
+            t += 1
+            history.append(obs.tolist()+[t/max_len])
 
             state_dict = {
                 'obs': history,
@@ -160,7 +163,6 @@ def main():
 
             logger.debug(f'Action={action}, R_t+1={reward}')
             score += reward
-            t += 1
 
             # training
             if step % args.train_freq == 0:
