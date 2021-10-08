@@ -35,35 +35,3 @@ def process_vec_obs(obs_: list, history_len: int, input_c: int, disable_byte_nor
     if disable_byte_norm:
         return obs_tensor
     return obs_tensor / 255.
-
-
-class ReplayBuffer(object):
-
-    def __init__(self, capacity: int = 10000):
-        self.capacity = capacity
-        self.data = []
-
-    def add(self, o, a, r, n_o):  # (s, a, r, ns) or (o, h, c, a, r, no, nh, nc) or (o, h, c, a, r)
-        """Save a transition"""
-        self.data.append((o, a, r, n_o))
-        if len(self.data) > self.capacity:
-            self.data.pop(0)
-
-    def sample(self, batch_size):
-        return random.sample(self.data, batch_size)
-
-    def cla(self):
-        self.data = []
-
-    def is_full(self):
-        return len(self.data) >= self.capacity
-
-    # def get_all_trajectories(self):
-    #     return self.data
-
-    # def dataloader(self, batch_size):
-    #     random.shuffle(self.data)
-    #     return (self.data[i:i + batch_size] for i in range(0, len(self), batch_size))
-
-    def __len__(self):
-        return len(self.data)

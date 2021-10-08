@@ -33,17 +33,15 @@ class PGAgent(BaseAgent):
     """
     policy gradient use critics...
 
-    mc: REINFORCE, MC - baseline
-    q: action-value function
-    adv: advantage = r + V(s') - V(s)
-
-
+    mc: REINFORCE, MC - baseline -> target=mc
+    q: action-value function -> target=td
+    adv: advantage = r + V(s') - V(s) -> target=td
     """
     critic_types = ['mc', 'q', 'adv']
     critic_targets = ['mc', 'td']
 
     def __init__(self, critic='mc', critic_target='mc', **kwargs):
-        super().__init__(name='reinforce', **kwargs)
+        super().__init__(name='policy_gradient', **kwargs)
 
         self.policy_model = self.init_model().to(device)
         self.policy_model.eval()
@@ -105,8 +103,10 @@ class PGAgent(BaseAgent):
             for i in range(len(self.trajectory) - 2, 0, -3):
                 if self.critic_target == 'mc':
                     v = self.trajectory[i] + v * self.gamma
-                else:
+                elif self.critic_target == 'td':
                     v = self.trajectory[i]
+                else:
+                    raise ValueError(f'{self.critic_target} is not a valid critic target')
                 self.rb.add((self.trajectory[i - 2],
                              self.trajectory[i - 1],
                              v,
@@ -149,7 +149,7 @@ class PGAgent(BaseAgent):
 
         t_v_loss /= counts
         t_p_loss /= counts
-        logger.info(f'ValueLoss={t_v_loss}, PolicyLoss={t_p_loss}')
+        logger.info(f'ValueLoss={t_v_loss:.3f}, PolicyLoss={t_p_loss:.3f}')
 
         self.policy_model.eval()
 

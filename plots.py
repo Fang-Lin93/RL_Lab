@@ -18,13 +18,15 @@ def plot_ckp(ckp_name):
     ax[0].set_title(f'{config["game"]}_{config["S"]}')
     for i, (k, v) in enumerate(ckp.items()):
         ax[i].plot(x, v, label=k)
-        ax[i].set_xlabel('Time used (in min)')
         ax[i].legend()
+    ax[-1].set_xlabel('Time used (in min)')
     fig.show()
 
 
 if __name__ == '__main__':
-    plot_ckp('cppg')
+    plot_ckp('ppo')
+
+
 
 
 

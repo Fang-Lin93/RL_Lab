@@ -177,7 +177,7 @@ def main():
             if done or t > config['max_len']:
                 state_dict['done'] = True
                 agent.act(state_dict)
-                logger.info(f"Episode finished after {t + 1} "
+                logger.info(f"Ckp {args.S}: episode finished after {t + 1} "
                             f"time steps with reward = {score} "
                             f"remaining={(time.time()-s_time)/(episode+1)*(config['N_episodes']-episode-1):.3f}s")
                 break

@@ -8,10 +8,10 @@ import random
 from collections import deque
 from matplotlib import pyplot as plt
 from loguru import logger
-from agents import PGAgent
+from agents import PPOAgent
 import argparse
 
-parser = argparse.ArgumentParser(description='Policy Gradient')
+parser = argparse.ArgumentParser(description='PPO Agent')
 
 
 parser.add_argument('--S', default='run', help='name for the experiment')
@@ -39,8 +39,13 @@ parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (def
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--batch_size', default=256, type=int, help='batch_size')
-parser.add_argument('--critic', default='adv', type=str, help='critic in ["mc", "td", "adv"]')
-parser.add_argument('--critic_targets', default='td', type=str, help=' mc or td')
+parser.add_argument('--critic_targets', default='td', type=str, help='mc or td')
+parser.add_argument('--c1', default=0.1, type=float, help='weight for value loss')
+parser.add_argument('--c2', default=0.1, type=float, help='weight for entropy bonus')
+parser.add_argument('--clip_eps', default=0.2, type=float, help='clip target')
+parser.add_argument('--opt_epoch', default=5, type=int, help=' number of opt training')
+parser.add_argument('--kl_penalty', default=-1, type=float, help='kl_penalty term, -1 means no panelty')
+
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
@@ -78,6 +83,7 @@ def main():
             logger.info(f'{k}={v}')
         env = gym.make(config['game'])
     else:
+
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
@@ -93,17 +99,18 @@ def main():
             'start_time': time.time(),
             'time': [],
             'reward_rec': [],
+            'total_loss': [],
+            'ppo_target': [],
             'value_loss': [],
-            'policy_loss': [],
+            'entropy': [],
         }
         with open(f'{path}/performance.pickle', 'wb') as file:
             pickle.dump(performance, file)
 
-    agent = PGAgent(training=True, **config)
+    agent = PPOAgent(training=True, **config)
 
     if args.load_ckp:
-        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))
-        agent.critic_model.load_state_dict(torch.load(f'{path}/critic.pth', map_location='cpu'))
+        agent.model.load_state_dict(torch.load(f'{path}/model.pth', map_location='cpu'))
         logger.info('Successfully loaded models weights')
 
     step = 0
@@ -166,9 +173,11 @@ def main():
 
         # training
         if agent.rb.is_full:
-            l1, l2 = agent.train()
-            performance['value_loss'].append(l1)
-            performance['policy_loss'].append(l2)
+            stat = agent.train()
+            performance['total_loss'].append(stat[0])
+            performance['ppo_target'].append(stat[1])
+            performance['value_loss'].append(stat[2])
+            performance['entropy'].append(stat[3])
             agent.rb.cla()
             performance['reward_rec'].append(score)
             performance['time'].append(time.time()-start_time)
@@ -177,8 +186,7 @@ def main():
 
         with open(f'{path}/performance.pickle', 'wb') as file:
             pickle.dump(performance, file)
-        torch.save(agent.policy_model.state_dict(), f'{path}/policy.pth')
-        torch.save(agent.critic_model.state_dict(), f'{path}/critic.pth')
+        torch.save(agent.model.state_dict(), f'{path}/model.pth')
 
     plt.plot(performance['reward_rec'], label='score')
     plt.savefig(f'results/pg_{config["game"]}.png')

@@ -84,7 +84,7 @@ class BaseAgent(object):
         else:
             self.model_in_channel = 3 * self.history_len if self.input_rgb else self.input_c * self.history_len
 
-    def init_model(self, input_c=None, out_c=None):
+    def init_model(self, input_c=None, out_c=None, value_head=False):
         """
         can re-write this to get general models
         :return:
@@ -96,7 +96,7 @@ class BaseAgent(object):
         return FC_BN(output_c=out_c if out_c is not None else self.n_act,
                      input_c=input_c if input_c is not None else self.model_in_channel,
                      hidden_size=self.hidden_size,
-                     lstm=self.lstm, n_layers=self.n_layers)
+                     lstm=self.lstm, value=value_head, n_layers=self.n_layers)
 
     def forward(self, obs_tensor):
         """
@@ -112,7 +112,7 @@ class BaseAgent(object):
         """
         raise NotImplementedError
 
-    def record(self, reward, obs_tensor, action=None, finished=False):
+    def record(self, reward, obs_tensor, action, finished):
         """
         reward, obs_tensor, action = [r, next_s, next_act] for the purpose of agent's 'sensor'
         initial state -> set r = 0

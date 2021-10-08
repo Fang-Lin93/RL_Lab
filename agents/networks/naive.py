@@ -1,5 +1,3 @@
-
-
 import torch
 from torch import nn
 
@@ -11,7 +9,8 @@ class FC_BN(nn.Module):
     with h_t <- (o_t, h_t-1)
     """
 
-    def __init__(self, output_c: int, input_c: int, hidden_size: int = 128, n_layers: int = 5, lstm=False):
+    def __init__(self, output_c: int, input_c: int, hidden_size: int = 128, n_layers: int = 5,
+                 lstm=False, value=False):
         super(FC_BN, self).__init__()
         self.output_c = output_c
         self.input_c = input_c
@@ -29,11 +28,37 @@ class FC_BN(nn.Module):
                       nn.BatchNorm1d(hidden_size),
                       nn.ReLU())]
 
-        self.fc = nn.Sequential(nn.Linear(fc_in, hidden_size),
-                                nn.ReLU(),
-                                *fc_layers,
-                                nn.Linear(hidden_size, output_c)
-                                )
+        self.lower_fc = nn.Sequential(
+            nn.Linear(fc_in, hidden_size),
+            nn.ReLU(),
+            *fc_layers,
+        )
+
+        # if head does not contain BN, it will divergent !!
+
+        self.policy_head = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, output_c)
+        )
+
+        self.value = value
+        if value:
+            self.value_head = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, 1)
+            )
+        else:
+            self.value_head = None
 
     def forward(self, obs_):
         """
@@ -44,9 +69,13 @@ class FC_BN(nn.Module):
         if self.lstm:
             lstm_out, (_, _) = self.rnn(obs_)
             x = torch.cat([obs_[:, -1, :], lstm_out[:, -1, :]], dim=-1)
-            return self.fc(x).view(-1, self.output_c)
+            return self.policy_head(self.lower_fc(x)).view(-1, self.output_c)
 
-        return self.fc(obs_.view(-1, self.input_c)).view(-1, self.output_c)
+        x = self.lower_fc(obs_.view(-1, self.input_c))
+        if self.value:
+            return self.policy_head(x).view(-1, self.output_c), self.value_head(x).view(-1)
+
+        return self.policy_head(x).view(-1, self.output_c)
 
     def save_model(self, model_file='v1', path='models'):
         torch.save(self.state_dict(), f'{path}/dqn_{model_file}.pth')
@@ -88,14 +117,14 @@ class CNN(nn.Module):
         h = self.s_cv2d(self.s_cv2d(self.s_cv2d(height)))
         w = self.s_cv2d(self.s_cv2d(self.s_cv2d(width)))
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size*w*h, 256),
+            nn.Linear(hidden_size * w * h, 256),
             nn.ReLU(),
             nn.Linear(256, output_c)
         )
 
     @staticmethod
     def s_cv2d(size, kernel_size=4, stride=2, padding=0):
-        return (size + 2*padding - kernel_size) // stride + 1
+        return (size + 2 * padding - kernel_size) // stride + 1
 
     def forward(self, obs_):
         """
@@ -120,4 +149,3 @@ class CNN(nn.Module):
 
     def num_paras(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
-

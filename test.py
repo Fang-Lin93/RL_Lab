@@ -6,7 +6,7 @@ from collections import deque
 
 import torch
 from loguru import logger
-from agents import DQNAgent, PGAgent
+from agents import DQNAgent, PGAgent, PPOAgent
 
 
 # TODO: agent loading ckp methods
@@ -31,6 +31,8 @@ def eva(args, max_episode=1000):
         agent = DQNAgent(**config)
     elif args.A == 'pg':
         agent = PGAgent(**config)
+    elif args.A == 'ppo':
+        agent = PPOAgent(**config)
     else:
         raise ValueError(f'Agent {args.A} not found')
 
