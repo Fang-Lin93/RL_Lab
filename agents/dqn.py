@@ -26,12 +26,12 @@ class DQNAgent(BaseAgent):
     Target_model: older mostly fixed model
     """
 
-    def __init__(self, eps_greedy: float = -1, target_type='TD', **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(name='dqn', **kwargs)
 
-        self.eps_greedy = eps_greedy
-        self.target_type = target_type
-        self.rb = Buffer(capacity=kwargs.get('buffer_size', 10000))
+        self.eps_greedy = kwargs.get('eps_greedy', 0.05)
+        self.target_type = kwargs.get('q_target', 'TD')
+        self.rb = Buffer(capacity=kwargs.get('q_buffer_size', 10000))
 
         self.policy_model = self.init_model().to(device)
 
@@ -137,20 +137,24 @@ class DQNAgent(BaseAgent):
             return
         self.target_model.load_state_dict(self.policy_model.state_dict())
 
-    def load_ckp(self, ckp, training=False):
+    def load_ckp(self, path, training=True):
         if not training:
             try:
-                self.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
+                self.policy_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
                 self.policy_model.eval()
             except Exception as exp:
                 raise ValueError(f'{exp}')
         else:
             try:
-                self.policy_model.load_state_dict(torch.load(f'checkpoints/{ckp}/policy.pth', map_location='cpu'))
-                self.target_model.load_state_dict(torch.load(f'checkpoints/{ckp}/target.pth', map_location='cpu'))
+                self.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))
+                self.target_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
                 self.policy_model.eval()
             except Exception as exp:
                 raise ValueError(f'{exp}')
+
+    def save_ckp(self, path):
+        torch.save(self.policy_model.state_dict(), f'{path}/policy.pth')
+        torch.save(self.target_model.state_dict(), f'{path}/target.pth')
 
 
 if __name__ == '__main__':

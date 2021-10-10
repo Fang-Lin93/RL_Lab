@@ -8,14 +8,11 @@ def plot_ckp(ckp_name):
     with open(f'checkpoints/{ckp_name}/performance.pickle', 'rb') as file:
         ckp = pickle.load(file)
 
-    with open(f'checkpoints/{ckp_name}/config.pickle', 'rb') as file:
-        config = pickle.load(file)
-
     x = [round(_ / 60, 2) for _ in ckp['time']]
-    del ckp['episode'], ckp['time'], ckp['start_time']
+    del ckp['episode'], ckp['time']
 
     fig, ax = plt.subplots(len(ckp), 1, figsize=(10, 8 + len(ckp)))
-    ax[0].set_title(f'{config["game"]}_{config["S"]}')
+    ax[0].set_title(f'{ckp_name}')
     for i, (k, v) in enumerate(ckp.items()):
         ax[i].plot(x, v, label=k)
         ax[i].legend()
@@ -24,7 +21,7 @@ def plot_ckp(ckp_name):
 
 
 if __name__ == '__main__':
-    plot_ckp('ppo')
+    plot_ckp('ts')
 
 
 

@@ -32,7 +32,7 @@ parser.add_argument('--load_ckp', action='store_true')
 parser.add_argument('--N_episodes', default=100000, type=int, help='N_episodes')
 parser.add_argument('--max_len', default=100000, type=int, help='max_len of episodes')
 parser.add_argument('--buffer_size', default=10000, type=int, help='buffer_size of trajectory')
-parser.add_argument('--eps_greedy', default=0.05, type=float, help='eps_greedy (default: 0.1)')
+parser.add_argument('--eps_greedy', default=0.05, type=float, help='eps_greedy (default: 0.05)')
 parser.add_argument('--explore_step', default=500, type=int, help='anneal greedy')
 
 # model lstm can easily blow up
@@ -52,17 +52,17 @@ parser.add_argument('--lr', default=0.0001, type=float, help='learning rate (def
 parser.add_argument('--eps', default=1e-5, type=float, help='eps of RMSProp  (default: 1e-5)')
 parser.add_argument('--max_grad_norm', default=10, type=float, help='max_grad_norm for clipping grads')
 parser.add_argument('--batch_size', default=256, type=int, help='batch_size')
-parser.add_argument('--target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
+parser.add_argument('--q_target', default='TD', type=str, help='target = TD/MC, MC only in short episodes (default: TD)')
 parser.add_argument('--train_freq', default=5, type=int, help='train every ? frame')
 parser.add_argument('--update_freq', default=10, type=int, help='update every ? EPISODE')
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
-parser.add_argument('--game', default='Breakout-v4', type=str, help='game env name')
+parser.add_argument('--game', default='CartPole-v0', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--human', action='store_true')  # default='rgb_array'
-parser.add_argument('--no_op_max', default=10, type=int, help='no cations at the beginning')
+parser.add_argument('--no_op_max', default=5, type=int, help='no cations at the beginning')
 
 #  BeamRider-ram-v4 Breakout-v0  SpaceInvaders-v0  CartPole-v0 BreakoutNoFrameskip-v4 Breakout-v4
 
@@ -104,7 +104,6 @@ def main():
 
         performance = {
             'episode': 0,
-            'start_time': time.time(),
             'time': [],
             'reward_rec': [],
             'loss_rec': [],
@@ -114,8 +113,7 @@ def main():
     agent = DQNAgent(training=True, **config)
 
     if args.load_ckp:
-        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))
-        agent.target_model.load_state_dict(torch.load(f'{path}/target.pth', map_location='cpu'))
+        agent.load_ckp(path)
         logger.info('Successfully loaded models weights')
 
     loss = None
@@ -124,7 +122,9 @@ def main():
     s_time = time.time()
     min_episode = performance['episode']
     max_len = config['max_len']
-    start_time = performance['start_time']
+
+    train_time = performance['time'][-1] if performance['time'] else 0.
+    start_time = time.time()
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
@@ -182,25 +182,25 @@ def main():
                             f"remaining={(time.time()-s_time)/(episode+1)*(config['N_episodes']-episode-1):.3f}s")
                 break
 
-        if config['target'] == 'TD':
+        if config['q_target'] == 'TD':
             agent.backup(final_payoff=reward)
-        if config['target'] == 'MC':
+        if config['q_target'] == 'MC':
             agent.backup(final_payoff=score)
 
-        # update policy model as the target
+        # update policy model as the q_target
         if episode % config['update_freq'] == 0:
             agent.sync_model()
 
             performance['loss_rec'].append(loss)
             performance['reward_rec'].append(score)
-            performance['time'].append(time.time()-start_time)
+            performance['time'].append(train_time + time.time()-start_time)
 
             performance.update(episode=episode)
 
         with open(f'{path}/performance.pickle', 'wb') as file:
             pickle.dump(performance, file)
-        torch.save(agent.policy_model.state_dict(), f'{path}/policy.pth')
-        torch.save(agent.target_model.state_dict(), f'{path}/target.pth')
+
+        agent.save_ckp(path)
 
     plt.plot(performance['reward_rec'], label='score')
     plt.savefig(f'results/QDN_{config["game"]}.png')

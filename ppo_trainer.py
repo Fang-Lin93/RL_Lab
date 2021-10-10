@@ -2,6 +2,7 @@ import gym
 import sys
 import time
 import pickle
+import json
 import os
 import torch
 import random
@@ -67,8 +68,8 @@ def main():
         os.mkdir(path)
 
     if args.load_ckp:
-        with open(f'{path}/config.pickle', 'rb') as handle:
-            config = pickle.load(handle)
+        with open(f'{path}/config.json', 'r') as handle:
+            config = json.load(handle)
         with open(f'{path}/performance.pickle', 'rb') as handle:
             performance = pickle.load(handle)
 
@@ -91,12 +92,11 @@ def main():
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
-        with open(f'{path}/config.pickle', 'wb') as file:
-            pickle.dump(config, file)
+        with open(f'{path}/config.json', 'w') as file:
+            json.dump(config, file)
 
         performance = {
             'episode': 0,
-            'start_time': time.time(),
             'time': [],
             'reward_rec': [],
             'total_loss': [],
@@ -110,7 +110,7 @@ def main():
     agent = PPOAgent(training=True, **config)
 
     if args.load_ckp:
-        agent.model.load_state_dict(torch.load(f'{path}/model.pth', map_location='cpu'))
+        agent.load_ckp(path)
         logger.info('Successfully loaded models weights')
 
     step = 0
@@ -119,10 +119,12 @@ def main():
     min_episode = performance['episode']
     max_len = config['max_len']
 
-    start_time = performance['start_time']
+    train_time = performance['time'][-1] if performance['time'] else 0.
+    start_time = time.time()
 
     for episode in range(min_episode, config['N_episodes']):
-        logger.info(f'Epoch={episode}, already finished step={step}')
+        print(f'Epoch={episode}, already finished step={step}', end='\r')
+
         obs = env.reset()
         t, score = 0, 0
         history = deque([obs.tolist() + [t/max_len]], maxlen=config['history_len'])
@@ -180,13 +182,13 @@ def main():
             performance['entropy'].append(stat[3])
             agent.rb.cla()
             performance['reward_rec'].append(score)
-            performance['time'].append(time.time()-start_time)
+            performance['time'].append(train_time+time.time()-start_time)
 
         performance.update(episode=episode)
 
         with open(f'{path}/performance.pickle', 'wb') as file:
             pickle.dump(performance, file)
-        torch.save(agent.model.state_dict(), f'{path}/model.pth')
+        agent.save_ckp(path)
 
     plt.plot(performance['reward_rec'], label='score')
     plt.savefig(f'results/pg_{config["game"]}.png')

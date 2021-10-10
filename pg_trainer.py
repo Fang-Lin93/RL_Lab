@@ -90,7 +90,6 @@ def main():
 
         performance = {
             'episode': 0,
-            'start_time': time.time(),
             'time': [],
             'reward_rec': [],
             'value_loss': [],
@@ -102,8 +101,7 @@ def main():
     agent = PGAgent(training=True, **config)
 
     if args.load_ckp:
-        agent.policy_model.load_state_dict(torch.load(f'{path}/policy.pth', map_location='cpu'))
-        agent.critic_model.load_state_dict(torch.load(f'{path}/critic.pth', map_location='cpu'))
+        agent.load_ckp(path)
         logger.info('Successfully loaded models weights')
 
     step = 0
@@ -112,7 +110,8 @@ def main():
     min_episode = performance['episode']
     max_len = config['max_len']
 
-    start_time = performance['start_time']
+    train_time = performance['time'][-1] if performance['time'] else 0.
+    start_time = time.time()
 
     for episode in range(min_episode, config['N_episodes']):
         logger.info(f'Epoch={episode}, already finished step={step}')
@@ -167,18 +166,19 @@ def main():
         # training
         if agent.rb.is_full:
             l1, l2 = agent.train()
+
             performance['value_loss'].append(l1)
             performance['policy_loss'].append(l2)
             agent.rb.cla()
             performance['reward_rec'].append(score)
-            performance['time'].append(time.time()-start_time)
+            performance['time'].append(train_time + time.time()-start_time)
+
 
         performance.update(episode=episode)
 
         with open(f'{path}/performance.pickle', 'wb') as file:
             pickle.dump(performance, file)
-        torch.save(agent.policy_model.state_dict(), f'{path}/policy.pth')
-        torch.save(agent.critic_model.state_dict(), f'{path}/critic.pth')
+        agent.save_ckp(path)
 
     plt.plot(performance['reward_rec'], label='score')
     plt.savefig(f'results/pg_{config["game"]}.png')

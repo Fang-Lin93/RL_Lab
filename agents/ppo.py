@@ -52,7 +52,7 @@ class PPOAgent(BaseAgent, ABC):
         self.c2 = kwargs.get('c2', 0.1)  # entropy bonus
         self.clip_eps = kwargs.get('clip_eps', 0.2)
         self.opt_epoch = kwargs.get('opt_epoch', 5)  # number epoch for updating
-        self.kl_penalty = kwargs.get('kl_penalty', 0.1)
+        self.kl_penalty = kwargs.get('kl_penalty', -1)
 
         logger.info(f'Num paras(policy)={self.model.num_paras()}')
 
@@ -141,9 +141,9 @@ class PPOAgent(BaseAgent, ABC):
                     clip_ratio = torch.clamp(ratio, 1 - self.clip_eps, 1 + self.clip_eps)
                     ppo_target = (torch.min(ratio * adv, clip_ratio * adv) * d).mean()
                 else:
-                    ppo_target = (ratio * adv).mean()
+                    ppo_target = (ratio * adv * d).mean()
 
-                val_loss = (val - r).pow(2).mean()
+                val_loss = 0.5 * (val - r).pow(2).mean()
                 entropy = Categorical(logits=logits).entropy().mean()
 
                 loss = - ppo_target + self.c1 * val_loss - self.c2 * entropy
@@ -169,6 +169,12 @@ class PPOAgent(BaseAgent, ABC):
 
         self.model.eval()
         return t_loss / counts, t_ppo_target / counts, t_v_loss / counts, t_entropy / counts  # final statistics
+
+    def load_ckp(self, path):
+        self.model.load_state_dict(torch.load(f'{path}/model.pth', map_location='cpu'))
+
+    def save_ckp(self, path):
+        torch.save(self.model.state_dict(), f'{path}/model.pth')
 
 
 if __name__ == '__main__':
