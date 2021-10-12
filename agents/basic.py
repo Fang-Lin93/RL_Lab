@@ -53,6 +53,9 @@ class ReplayBuffer(object):
 
 
 class BaseAgent(object):
+    """
+    This base agent is used for deep learning agents
+    """
     def __init__(self, **kwargs):
         self.name = kwargs.get('name', '')
 
@@ -126,7 +129,7 @@ class BaseAgent(object):
             if self.trajectory:  # r + gamma * max[Q(s', a')]
                 self.trajectory += [reward, obs_tensor.squeeze(0)]
                 if not finished:
-                    self.trajectory += [action]
+                    self.trajectory.append(action)
             else:  # initial state, the reward is None
                 self.trajectory = [obs_tensor.squeeze(0), action]
 
