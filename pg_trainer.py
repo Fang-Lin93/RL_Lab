@@ -173,7 +173,6 @@ def main():
             performance['reward_rec'].append(score)
             performance['time'].append(train_time + time.time()-start_time)
 
-
         performance.update(episode=episode)
 
         with open(f'{path}/performance.pickle', 'wb') as file:
