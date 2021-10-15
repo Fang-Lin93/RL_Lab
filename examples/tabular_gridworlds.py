@@ -12,7 +12,7 @@ from tqdm import trange
  """
 
 
-def main(World: GridWorldEnv):
+def run_grid(World: GridWorldEnv):
     N_episodes = 1000
     max_len = 100000
     update_freq = 1  # for offline only
@@ -100,8 +100,13 @@ def main(World: GridWorldEnv):
 
 
 if __name__ == '__main__':
-
+    """
+    why the algorithm not always finds the path during the testing phase?
+    (randomness ?)
+    """
+    import random
+    random.seed(0)
     from env import WindyGridWorldEnv, CliffWalkingEnv
 
-    main(WindyGridWorldEnv())
-    main(CliffWalkingEnv())
+    run_grid(WindyGridWorldEnv())
+    run_grid(CliffWalkingEnv())

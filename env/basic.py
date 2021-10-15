@@ -80,3 +80,8 @@ class GridWorldEnv(gym.Env):
         grids_ = [['_'] * self.grid_size[0] for _ in range(self.grid_size[1])]
         grids_[self.goal_pos[1]][self.goal_pos[0]] = 'T'
         return grids_
+
+
+class BoardGameEnv(gym.Env):
+    pass
+
