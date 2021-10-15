@@ -330,15 +330,18 @@ class BlackJackAgent(QTableAgent):
             else:
                 opt_no_ace[score-12][dealer_c-1] = int(v[1] > v[0])
 
+        fig, ax = plt.subplots(2, 1, figsize=(8, 14))
         for p, n in zip([opt_ace, opt_no_ace], ['With Ace', 'Without Ace']):
-            ax_ = sns.heatmap(p)
+            sub_ax = ax[int(n == 'Without Ace')]
+            ax_ = sns.heatmap(p, ax=sub_ax)
             ax_.set_title(self.__str__() + n)
             ax_.invert_yaxis()
-            plt.yticks(range(10), range(12, 22))
-            plt.ylabel('Hand Score')
-            plt.xticks(range(10), ['A'] + [str(_) for _ in range(2, 11)])
-            plt.xlabel('Dealer Show')
-            plt.show()
+            sub_ax.set_yticklabels(range(12, 22))
+            sub_ax.set_ylabel('Hand Score')
+            sub_ax.set_xticklabels(['A'] + [str(_) for _ in range(2, 11)])
+            sub_ax.set_xlabel('Dealer Show')
+
+        fig.show()
 
     def plot_value(self):
 
@@ -353,23 +356,25 @@ class BlackJackAgent(QTableAgent):
             else:
                 v_no_ace[dealer_c-1][score-12] = max(v)
 
-        self.plot_surface(v_ace, self.__str__() + 'With Ace')
-        self.plot_surface(v_no_ace, self.__str__() + 'Without Ace')
+        return self.plot_surface(v_ace, self.__str__() + 'With Ace'), \
+            self.plot_surface(v_no_ace, self.__str__() + 'Without Ace')
 
-    @staticmethod
-    def plot_surface(surf, desc=''):
+    def plot_surface(self, surf, desc=''):
         import numpy as np
         X, Y = np.meshgrid(range(10), range(10))
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-        ax.set_title(desc)
+        ax.set_title(self.__str__() +desc)
         ax.plot_surface(X, Y, np.array(surf), linewidth=10, antialiased=False, alpha=0.5)
         ax.set_zlim(-1, 1)
         ax.view_init(30, 140)
-        plt.xticks(range(10), range(12, 22))
-        plt.xlabel('Hand Score')
-        plt.yticks(range(10), ['A'] + [str(_) for _ in range(2, 11)])
-        plt.ylabel('Dealer Show')
-        plt.show()
+        ax.set_xticks(range(10))
+        ax.set_xticklabels(range(12, 22))
+        ax.set_xlabel('Hand Score')
+        ax.set_yticks(range(10))
+        ax.set_yticklabels(['A'] + [str(_) for _ in range(2, 11)])
+        ax.set_ylabel('Dealer Show')
+        fig.show()
+        return fig
 
     def __str__(self):
         return f'{self.value_target}_{"online" if self.online else "offline"}'
@@ -379,23 +384,23 @@ if __name__ == '__main__':
     """
     Find optimal tabular methods: Q, sarsa, mc
     """
+    N_episodes = 100000
+    update_freq = 1000  # for offline only
+    test_freq = N_episodes // 50  # evaluate the agent after some episodes
+    N_decks = 1
+    N_players = 1
 
     def test(agent_, n=1000):
         res = []
         agent_.training = False
-        env_ = BlackJackEnv(num_decks=-1, num_players=1, show_log=False)
+        env_ = BlackJackEnv(num_decks=N_decks, num_players=N_players, show_log=False)
         env_.set_agents([agent_])
         for _ in range(n):
             env_.reset()
             res.append(env_.run()[0])
         return sum(res) / len(res), res.count(1) / len(res)
 
-
-    N_episodes = 100000
-    update_freq = 1000  # for offline only
-    test_freq = N_episodes // 50  # evaluate the agent after some episodes
-
-    env = BlackJackEnv(num_decks=-1, num_players=1, show_log=False)
+    env = BlackJackEnv(num_decks=N_decks, num_players=N_players, show_log=False)
 
     methods = [('Q', True), ('sarsa', True), ('Q', False), ('sarsa', False), ('mc', False)]
 
@@ -424,6 +429,8 @@ if __name__ == '__main__':
                 agent.offline_train()
 
         agent.save_model()
+        agent.plot_policy()
+
         plt_x = [test_freq * _ for _ in range(len(rec_payoff))]
         ax[0].plot(plt_x, rec_payoff, label=tag)
         ax[1].plot(plt_x, rec_win, label=tag)
