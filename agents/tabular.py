@@ -1,6 +1,7 @@
 
 import json
 import os
+import random
 from loguru import logger
 from collections import deque
 
@@ -103,10 +104,31 @@ class QTableAgent(object):
         raise NotImplementedError()
 
     def offline_train(self):
-        """
-        how to use the buffer to train?
-        """
-        raise NotImplementedError()
+        if self.online:
+            return
+        if self.rb:
+            """
+            batch average
+            """
+            batch_y = {}
+            for (s, a, r, ns) in self.rb:
+                if (s, a) not in batch_y:
+                    batch_y[(s, a)] = [0, 1]  # (value, cnt)
+                else:
+                    batch_y[(s, a)][1] += 1
+                if self.value_target == 'Q' and ns is not None:
+                    batch_y[(s, a)][0] += r + self.discount_factor * max(self.target_Q[ns])
+                else:
+                    batch_y[(s, a)][0] += r
+
+            for (s, a) in batch_y.keys():
+                self.Q_table[s][a] = self.Q_table[s][a] + \
+                                     self.lr * (batch_y[(s, a)][0]/batch_y[(s, a)][1] - self.Q_table[s][a])
+
+            if self.value_target == 'Q':
+                self.sync_Q()
+            else:
+                self.rb = deque([], maxlen=self.buffer_size)
 
     def online_train(self, r=0, s=None, a=None):
         if not self.pre_sa:
@@ -121,7 +143,7 @@ class QTableAgent(object):
         self.Q_table[p_s][p_a] = self.Q_table[p_s][p_a] + self.lr * (y - self.Q_table[p_s][p_a])
 
     def backup(self, payoff):
-        if self.online:
+        if self.online and self.training:
             """
             backup the final reward and train if online
             """
@@ -169,4 +191,82 @@ class QTableAgent(object):
     def require_delayed_update(self):
         return self.value_target == 'Q' and not self.online
 
+
+class TabularGWAgent(QTableAgent):
+    """
+    discount factor = 1
+    use on-line -> train while running
+    use off-line -> use replay buffer to train
+    """
+
+    def __init__(self, grid_size, n_action_space=4, **kwargs):
+        self.grid_size = grid_size
+
+        super().__init__(n_action_space, **kwargs)
+        self.name = 'grid_world agent'
+
+    def init_table(self):
+        for x in range(self.grid_size[0]):
+            for y in range(self.grid_size[1]):
+                self.Q_table[f'{x}-{y}'] = [0 for _ in range(self.n_action_space)]
+
+    def act(self, obs: dict, **kwargs):
+        """
+        const reward = -1
+        """
+        s = self.encode_s(obs)
+
+        if self.training and random.random() < self.eps_greedy:
+            a = random.choice(obs['la'])
+        else:
+            qs = self.Q_table[s] if not self.require_delayed_update() else self.target_Q[s]
+            a = qs.index(max(qs))
+
+        if self.training:
+            if self.online:
+                if self.pre_sa:
+                    self.online_train(-1, s, a)
+                self.pre_sa = (s, a)
+            else:
+                self.trajectory += [s, a]
+
+        return a
+
+    @staticmethod
+    def encode_s(obs: dict, **kwargs):
+        return f'{obs["pos"][0]}-{obs["pos"][1]}'
+
+    def backup(self, payoff=0):
+        """
+        backup final immediate reward (payoff)
+        constant reward = -1 for each step
+        """
+        if self.online and self.training:
+            self.online_train(payoff)
+        else:
+            for i in range(len(self.trajectory) - 2, -1, -2):  # (s, a, s', a')
+                s, a = (self.trajectory[i], self.trajectory[i + 1])
+
+                if self.value_target == 'Q':  # (s, a, s'/G )
+                    if i + 2 < len(self.trajectory):
+                        self.rb.append((s, a, -1, self.trajectory[i + 2]))
+                    else:
+                        self.rb.append((s, a, payoff, None))  # terminal
+
+                elif self.value_target == 'sarsa':  # (s, a, target_value )
+                    if i + 3 < len(self.trajectory):
+                        tar = self.discount_factor * self.Q_table[self.trajectory[i + 2]][self.trajectory[i + 3]] - 1
+                    else:
+                        tar = payoff
+                    self.rb.append((s, a, tar, None))
+
+                elif self.value_target == 'mc':
+                    self.rb.append((s, a, payoff, None))
+                    payoff = self.discount_factor * payoff - 1
+
+                else:
+                    raise ValueError(f'value target should be either td or mc, not {self.value_target}')
+
+    def __str__(self):
+        return f'{self.value_target}_{"online" if self.online else "offline"}'
 
