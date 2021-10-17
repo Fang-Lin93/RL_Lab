@@ -6,7 +6,7 @@ from env.basic import GridWorldEnv
 class CliffWalkingEnv(GridWorldEnv):
     """
     Example 6.6 in Sutton's textbook
-    cliff: y = 3 & 0 < x < 11
+    cliff: y == 3 & 0 < x < 11
     """
 
     def __init__(self, grid_size=(12, 4)):

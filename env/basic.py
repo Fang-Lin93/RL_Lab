@@ -1,11 +1,10 @@
 
-import gym
 from gym import spaces
 
 
-class GridWorldEnv(gym.Env):
+class GridWorldEnv(object):
     """
-    indices are given as (x, y) not (row, col)
+    indices are given as (x, y)
     x: left -> right
     y: up -> down
     """
@@ -82,6 +81,6 @@ class GridWorldEnv(gym.Env):
         return grids_
 
 
-class BoardGameEnv(gym.Env):
+class BoardGameEnv(object):
     pass
 

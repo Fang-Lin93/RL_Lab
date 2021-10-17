@@ -1,5 +1,4 @@
 
-import gym
 import random
 from gym import spaces
 
@@ -88,7 +87,7 @@ class Dealer(object):
             self.is_bust = True
 
 
-class BlackJackEnv(gym.Env):
+class BlackJackEnv(object):
     """
     multi-players vs 1 dealer, as Example 5.1
     """

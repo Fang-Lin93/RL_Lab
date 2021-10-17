@@ -1,4 +1,6 @@
 import random
+import torch
+from torch import nn
 import seaborn as sns
 import numpy as np
 from tqdm import trange
@@ -7,34 +9,38 @@ from env import BlackJackEnv
 from agents import QTableAgent
 
 
-class BlackJackAgent(QTableAgent):
+class LinearBJAgent(QTableAgent):
     """
-    discount factor = 1
-    use on-line -> train while running
-    use off-line -> use replay buffer to train
+    I borrow the tabular agent and using model functions
+    rewrite online/offline train
+    Only give examples of Q learning and sarsa for online training.
+
+    The off-line follows tabular methods easily.
     """
 
-    def __init__(self, n_action_space=2, **kwargs):
-        self.rand_init = kwargs.get('rand_init', False)
+    def __init__(self, input_c=22, n_action_space=2, **kwargs):
+        super().__init__(n_action_space=n_action_space, **kwargs)
 
-        super().__init__(n_action_space, **kwargs)
-        self.name = 'BJ'
+        self.name = 'linear_BJ'
+        self.input_c = input_c
+        self.eps_greedy = kwargs.get('eps_greedy', 0.1)
+        self.policy_model = self.init_policy()
+
+    def init_policy(self):
+        return nn.Linear(self.input_c, self.n_action_space)
 
     def init_table(self):
-        """
-        (dealer card) - (my score) - (usable ace)
-        initially, sticks only when score >= 20 as in the textbook
-        or using random
-        """
+        return {}
 
-        for _d_c in range(1, 11):
-            for _s in range(12, 22):
-                if self.rand_init:
-                    self.Q_table[f'{_d_c}-{_s}-0'] = [random.uniform(-1, 1), random.uniform(-1, 1)]
-                    self.Q_table[f'{_d_c}-{_s}-1'] = [random.uniform(-1, 1), random.uniform(-1, 1)]
-                else:
-                    self.Q_table[f'{_d_c}-{_s}-0'] = [-0.1 if _s >= 20 else 0.1, 0]
-                    self.Q_table[f'{_d_c}-{_s}-1'] = [-0.1 if _s >= 20 else 0.1, 0]
+    def policy2table(self):
+        with torch.no_grad():
+            for _d_c in range(1, 11):
+                for _s in range(12, 22):
+                    vec = [0] * 20
+                    vec[_d_c - 1] = 1
+                    vec[_s - 2] = 1
+                    self.Q_table[f'{_d_c}-{_s}-0'] = self.policy_model(torch.FloatTensor(vec + [1, 0])).tolist()
+                    self.Q_table[f'{_d_c}-{_s}-1'] = self.policy_model(torch.FloatTensor(vec + [0, 1])).tolist()
 
     def act(self, obs: dict, **kwargs):
         player_id = kwargs.get('player_id')
@@ -44,61 +50,65 @@ class BlackJackAgent(QTableAgent):
             if self.training and random.random() < self.eps_greedy:
                 a = random.choice(obs['la'])
             else:
-                qs = self.Q_table[s] if not self.require_delayed_update() else self.target_Q[s]
-                a = int(qs[1] > qs[0])
+                qs = self.predict(s)
+                a = qs.argmax(dim=-1)
 
             if self.training:
                 if self.online:
                     if self.pre_sa:
                         self.online_train(0, s, a)
                     self.pre_sa = (s, a)
-                else:
-                    self.trajectory += [s, a]
-
             return a
         return
 
+    def predict(self, x):
+        with torch.no_grad():
+            return self.policy_model(x)
+
+    def online_train(self, r=0, s=None, a=None):
+        if not self.pre_sa:
+            return
+        self.policy_model.train()
+        p_s, p_a = self.pre_sa
+        if s is None:
+            y = r
+        else:
+            y = r + self.discount_factor * self.policy_model(s).max().item() if self.value_target == 'Q' \
+                else r + self.discount_factor * self.policy_model(s)[a].item()
+
+        self.policy_model.zero_grad()
+        loss = (self.policy_model(p_s)[p_a] - y) ** 2
+        loss.backward()
+
+        # gradient descent
+        with torch.no_grad():
+            for p in self.policy_model.parameters():
+                p -= 2 * self.lr * p.grad
+        self.policy_model.eval()
+
     @staticmethod
     def encode_s(obs: dict, **kwargs):
+        """
+        use one-hot
+        """
         player_id = kwargs.get('player_id')
-        return f'{obs["dear_hand"]}-{obs["scores"][player_id]}-{obs["usable_ace"][player_id]}'
+        vec = [0] * 22
+        vec[obs["dear_hand"] - 1] = 1
+        vec[obs["scores"][player_id] - 2] = 1
+        vec[20 + obs["usable_ace"][player_id]] = 1
+        return torch.FloatTensor(vec)
 
     def backup(self, payoff):
         """
         backup the final reward and train if necessary
         """
-        if self.online:
+        if self.online and self.training:
             self.online_train(payoff)
-        else:
-            for i in range(len(self.trajectory) - 2, -1, -2):  # (s, a, s', a')
-                s, a = (self.trajectory[i], self.trajectory[i + 1])
-
-                if self.value_target == 'Q':  # (s, a, 0, s' )
-                    if i + 2 < len(self.trajectory):
-                        self.rb.append((s, a, 0, self.trajectory[i + 2]))
-                    else:
-                        self.rb.append((s, a, payoff, None))
-
-                elif self.value_target == 'sarsa':  # (s, a, target_value )
-                    if i + 3 < len(self.trajectory):
-                        tar = self.discount_factor * self.Q_table[self.trajectory[i + 2]][self.trajectory[i + 3]]
-                    else:
-                        tar = payoff
-                    self.rb.append((s, a, tar, None))
-
-                elif self.value_target == 'mc':
-                    self.rb.append((s, a, payoff, None))
-                    payoff *= self.discount_factor
-
-                else:
-                    raise ValueError(f'value target should be either td or mc, not {self.value_target}')
 
     def plot_policy(self):
-        self.sync_Q()
-
+        self.policy2table()
         opt_no_ace = [[0] * 10 for _ in range(10)]  # [dealer card][my score]
         opt_ace = [[0] * 10 for _ in range(10)]
-
         for k, v in self.Q_table.items():
             dealer_c, score, ace = [int(_) for _ in k.split('-')]
             if ace:
@@ -120,18 +130,15 @@ class BlackJackAgent(QTableAgent):
         fig.show()
 
     def plot_value(self):
-
-        self.sync_Q()
+        self.policy2table()
         v_no_ace = [[0] * 10 for _ in range(10)]
         v_ace = [[0] * 10 for _ in range(10)]
-
         for k, v in self.target_Q.items():
             dealer_c, score, ace = [int(_) for _ in k.split('-')]
             if ace:
                 v_ace[dealer_c - 1][score - 12] = max(v)
             else:
                 v_no_ace[dealer_c - 1][score - 12] = max(v)
-
         return self.plot_surface(v_ace, self.__str__() + 'With Ace'), \
             self.plot_surface(v_no_ace, self.__str__() + 'Without Ace')
 
@@ -156,32 +163,8 @@ class BlackJackAgent(QTableAgent):
         return f'{self.value_target}_{"online" if self.online else "offline"}'
 
 
-class FixAgent(BlackJackAgent):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.name = 'BJ_fix_strategy'
-
-    def init_table(self):
-        for _d_c in range(1, 11):
-            for _s in range(12, 22):
-                self.Q_table[f'{_d_c}-{_s}-0'] = [-1, -1]  # pessimistic
-                self.Q_table[f'{_d_c}-{_s}-1'] = [-1, -1]
-
-    def act(self, obs: dict, **kwargs):
-        player_id = kwargs.get('player_id')
-        if not obs['finished'][player_id]:
-            s = self.encode_s(obs, player_id=player_id)
-            if obs['scores'][player_id] >= 20:
-                a = 0
-            else:
-                a = 1
-            self.trajectory += [s, a]
-            return a
-
-
 def train_policies():
-    N_episodes = 1000000
-    update_freq = 1000  # for offline only
+    N_episodes = 50000
     test_freq = N_episodes // 50  # evaluate the agent after some episodes
     N_decks = 1
     N_players = 1
@@ -198,16 +181,16 @@ def train_policies():
 
     env = BlackJackEnv(num_decks=N_decks, num_players=N_players, show_log=False)
 
-    methods = [('Q', True), ('sarsa', True), ('Q', False), ('sarsa', False), ('mc', False)]
+    methods = ['Q', 'sarsa']
 
     fig, ax = plt.subplots(2, 1, figsize=(10, 10))
 
-    for (m, online) in methods:
-        tag = m + f'_{"online" if online else "offline"}'
-        agent = BlackJackAgent(training=True, value_target=m, online=online)
+    for m in methods:
+        tag = m
+        agent = LinearBJAgent(training=True, value_target=m, online=True, lr=0.001)
         env.set_agents([agent])
         rec_payoff, rec_win = [], []
-        for episode in trange(N_episodes, desc=tag):
+        for episode in trange(N_episodes, desc=tag + '_linear'):
             if episode % test_freq == 0:
                 sco_, win_ = test(agent)
                 rec_payoff.append(sco_)
@@ -221,8 +204,6 @@ def train_policies():
 
             if R == 0:
                 assert env.payoff[0] == 0
-            if episode % update_freq == 0:
-                agent.offline_train()
 
         # agent.save_model()
         agent.plot_policy()
@@ -239,27 +220,5 @@ def train_policies():
     fig.show()
 
 
-"""
-Reproducing the results in Sutton's book (Example 5.1)
-"""
-
-
-def value_surface():
-    fix_agent = FixAgent(training=True, value_target='mc', lr=0.1, buffer_size=10000)
-
-    env = BlackJackEnv(num_decks=-1, num_players=1, show_log=False)
-    env.set_agents([fix_agent])
-    for episode in trange(500000, desc='Fix policy'):
-        env.reset()
-        R = env.run()[0]
-        fix_agent.backup(R)
-        fix_agent.reset()
-
-        if episode % 1000 == 0:
-            fix_agent.offline_train()
-    fix_agent.plot_value()
-
-
 if __name__ == '__main__':
     train_policies()
-    value_surface()
