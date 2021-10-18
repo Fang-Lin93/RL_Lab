@@ -20,7 +20,7 @@ class LinearGWAgent(TabularGWAgent):
     online only
     """
 
-    def __init__(self, n_action_space=4, sensor=False, **kwargs):
+    def __init__(self, n_action_space=4, sensor=False, q_back=False, **kwargs):
         super().__init__(n_action_space=n_action_space, **kwargs)
 
         self.name = 'linear_GW'
@@ -29,6 +29,7 @@ class LinearGWAgent(TabularGWAgent):
             self.input_c = 4
         else:
             self.input_c = self.grid_size[0] * self.grid_size[1]
+        self.q_back = q_back
         self.eps_greedy = kwargs.get('eps_greedy', 0.1)
         self.policy_model = self.init_policy()
 
@@ -59,11 +60,13 @@ class LinearGWAgent(TabularGWAgent):
             a = qs.argmax(dim=-1)
 
         if self.training:
+            if self.q_back:
+                self.trajectory += [-1, s, a] if self.trajectory else [s, a]
+                return a
             if self.online:
                 if self.pre_sa:
                     self.online_train(-1, s, a)
                 self.pre_sa = (s, a)
-
         return a
 
     def predict(self, x):
@@ -80,15 +83,15 @@ class LinearGWAgent(TabularGWAgent):
 
         return torch.FloatTensor(vec)
 
-    # @staticmethod
-    # def bool_kernel(vec):
-    #     return [i*j for i in vec for j in vec]
-
     def backup(self, payoff=0):
         """
         backup final immediate reward (payoff)
         constant reward = -1 for each step
         """
+        if self.q_back and self.training:
+            self.Q_back_propagation(payoff)
+            return
+
         if self.online and self.training:
             self.online_train(payoff)
 
@@ -114,11 +117,22 @@ class LinearGWAgent(TabularGWAgent):
                 p -= 2 * self.lr * p.grad
         self.policy_model.eval()
 
+    def Q_back_propagation(self, final_payoff):
+        if not self.trajectory:  # (s, a, r, s' a' ,r')
+            return
+        self.trajectory.append(final_payoff)
+        ns, na = None, None
+        for i in range(len(self.trajectory)-3, -1, -3):
+            s, a, r = self.trajectory[i],  self.trajectory[i+1],  self.trajectory[i+2]
+            self.pre_sa = (s, a)
+            self.online_train(r, ns, na)
+            ns, na = s, a
+
     def __str__(self):
         return f'{self.value_target}_{"online" if self.online else "offline"}'
 
 
-def run_grid(World: GridWorldEnv, tabular=True, max_len=100, N_episodes=2000):
+def run_grid(World: GridWorldEnv, tabular=True, q_back=False, max_len=100, N_episodes=2000, lr=0.0005):
     update_freq = 1  # for offline only
     env = World
 
@@ -131,10 +145,10 @@ def run_grid(World: GridWorldEnv, tabular=True, max_len=100, N_episodes=2000):
         tag = m + f'_{"online" if online else "offline"}'
         if tabular:
             agent = TabularGWAgent(grid_size=env.grid_size,
-                                   training=True, value_target=m, online=online, lr=0.5)
+                                   training=True, value_target=m, online=online, lr=lr)
         else:
-            agent = LinearGWAgent(grid_size=env.grid_size, training=True,
-                                  value_target=m, online=True, lr=0.0005)
+            agent = LinearGWAgent(grid_size=env.grid_size, training=True, q_back=q_back,
+                                  value_target=m, online=True, lr=lr)
         print(agent)
         env.set_agent(agent)
         rec_payoff = []
@@ -216,11 +230,17 @@ if __name__ == '__main__':
     from env import WindyGridWorldEnv, CliffWalkingEnv
 
     # tabular methods
-    run_grid(WindyGridWorldEnv(), tabular=True, max_len=10000, N_episodes=100)
-    run_grid(CliffWalkingEnv(), tabular=True, max_len=100, N_episodes=2000)
+    run_grid(WindyGridWorldEnv(), tabular=True, max_len=10000, N_episodes=100, lr=0.5)
+    run_grid(CliffWalkingEnv(), tabular=True, max_len=100, N_episodes=2000, lr=0.5)
 
     # approximation methods
     # approx-sarsa is similar to tabular-sarsa, but approx-Q is slower than tabular-Q
+    # unlike tabular-Q (guaranteed optimal), approx-Q is suboptimal OR optimal (randomness)
     # require high-representable-power model (e.g. hidden-dim=128)
-    run_grid(WindyGridWorldEnv(), tabular=False, max_len=10000, N_episodes=100)
-    run_grid(CliffWalkingEnv(), tabular=False, max_len=100, N_episodes=2000)
+    run_grid(WindyGridWorldEnv(), tabular=False, max_len=10000, N_episodes=100, lr=0.0005)
+    run_grid(CliffWalkingEnv(), tabular=False, max_len=100, N_episodes=2000, lr=0.0005)
+
+    # additional experiment: using Q-back_propagation, it's designed for finite horizon games
+    # it's slow for games with too many episodes (windy GW..)
+    run_grid(WindyGridWorldEnv(), tabular=False, q_back=True, max_len=10000, N_episodes=100, lr=0.0005)
+    run_grid(CliffWalkingEnv(), tabular=False, q_back=True, max_len=100, N_episodes=2000, lr=0.0005)
