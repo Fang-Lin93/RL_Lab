@@ -179,12 +179,9 @@ class FixAgent(BlackJackAgent):
             return a
 
 
-def train_policies():
-    N_episodes = 1000000
+def train_policies(N_episodes=100000, N_decks=1, N_players=1):
     update_freq = 1000  # for offline only
     test_freq = N_episodes // 50  # evaluate the agent after some episodes
-    N_decks = 1
-    N_players = 1
 
     def test(agent_, n=1000):
         res = []

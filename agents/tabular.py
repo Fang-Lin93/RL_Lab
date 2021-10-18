@@ -130,7 +130,7 @@ class QTableAgent(object):
             else:
                 self.rb = deque([], maxlen=self.buffer_size)
 
-    def online_train(self, r=0, s=None, a=None):
+    def online_train(self, r, s=None, a=None):
         if not self.pre_sa:
             return
         p_s, p_a = self.pre_sa

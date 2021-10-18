@@ -69,12 +69,14 @@ class LinearBJAgent(QTableAgent):
         if not self.pre_sa:
             return
         self.policy_model.train()
-        p_s, p_a = self.pre_sa
-        if s is None:
-            y = r
-        else:
-            y = r + self.discount_factor * self.policy_model(s).max().item() if self.value_target == 'Q' \
-                else r + self.discount_factor * self.policy_model(s)[a].item()
+
+        with torch.no_grad():
+            p_s, p_a = self.pre_sa
+            if s is None:
+                y = r
+            else:
+                y = r + self.discount_factor * self.policy_model(s).max() if self.value_target == 'Q' \
+                    else r + self.discount_factor * self.policy_model(s)[a]
 
         self.policy_model.zero_grad()
         loss = (self.policy_model(p_s)[p_a] - y) ** 2
@@ -163,11 +165,9 @@ class LinearBJAgent(QTableAgent):
         return f'{self.value_target}_{"online" if self.online else "offline"}'
 
 
-def train_policies():
-    N_episodes = 50000
+def train_policies(N_episodes=50000, N_decks=1, N_players=1):
+
     test_freq = N_episodes // 50  # evaluate the agent after some episodes
-    N_decks = 1
-    N_players = 1
 
     def test(agent_, n=1000):
         res = []

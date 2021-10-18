@@ -20,11 +20,15 @@ class LinearGWAgent(TabularGWAgent):
     online only
     """
 
-    def __init__(self, input_c, n_action_space=4, **kwargs):
+    def __init__(self, n_action_space=4, sensor=False, **kwargs):
         super().__init__(n_action_space=n_action_space, **kwargs)
 
         self.name = 'linear_GW'
-        self.input_c = input_c
+        self.sensor = sensor
+        if sensor:
+            self.input_c = 4
+        else:
+            self.input_c = self.grid_size[0] * self.grid_size[1]
         self.eps_greedy = kwargs.get('eps_greedy', 0.1)
         self.policy_model = self.init_policy()
 
@@ -32,12 +36,15 @@ class LinearGWAgent(TabularGWAgent):
         return {}
 
     def init_policy(self):
-        return nn.Linear(self.input_c, self.n_action_space)
-
-    def policy2table(self):
-        with torch.no_grad():
-            m = self.policy_model
-        # TODO
+        """
+        linear does not work
+        be careful if you add too many layers (need clipping)
+        """
+        return nn.Sequential(
+            nn.Linear(self.input_c, 128),
+            nn.ReLU(),
+            nn.Linear(128, self.n_action_space)
+        )
 
     def act(self, obs: dict, **kwargs):
         """
@@ -66,10 +73,16 @@ class LinearGWAgent(TabularGWAgent):
     def encode_s(self, obs: dict, **kwargs):
         """
         use one-hot
+        linear kernel does not work well
         """
         vec = [0] * self.input_c
-        vec[self.grid_size[0]*obs["pos"][1] + obs["pos"][0]] = 1  # TODO
+        vec[self.grid_size[1]*obs["pos"][0] + obs["pos"][1]] = 1
+
         return torch.FloatTensor(vec)
+
+    # @staticmethod
+    # def bool_kernel(vec):
+    #     return [i*j for i in vec for j in vec]
 
     def backup(self, payoff=0):
         """
@@ -79,16 +92,18 @@ class LinearGWAgent(TabularGWAgent):
         if self.online and self.training:
             self.online_train(payoff)
 
-    def online_train(self, r=0, s=None, a=None):
+    def online_train(self, r, s=None, a=None):
         if not self.pre_sa:
             return
         self.policy_model.train()
-        p_s, p_a = self.pre_sa
-        if s is None:
-            y = r
-        else:
-            y = r + self.discount_factor * self.policy_model(s).max().item() if self.value_target == 'Q' \
-                else r + self.discount_factor * self.policy_model(s)[a].item()
+
+        with torch.no_grad():
+            p_s, p_a = self.pre_sa
+            if s is None:
+                y = r
+            else:
+                y = r + self.discount_factor * self.policy_model(s).max() if self.value_target == 'Q' \
+                    else r + self.discount_factor * self.policy_model(s)[a]
 
         self.policy_model.zero_grad()
         loss = (self.policy_model(p_s)[p_a] - y) ** 2
@@ -98,17 +113,13 @@ class LinearGWAgent(TabularGWAgent):
             for p in self.policy_model.parameters():
                 p -= 2 * self.lr * p.grad
         self.policy_model.eval()
-        self.policy2table()
 
     def __str__(self):
         return f'{self.value_target}_{"online" if self.online else "offline"}'
 
 
-def run_grid(World: GridWorldEnv, tabular=True):
-    N_episodes = 1000
-    max_len = 100
+def run_grid(World: GridWorldEnv, tabular=True, max_len=100, N_episodes=2000):
     update_freq = 1  # for offline only
-
     env = World
 
     methods = [('Q', True), ('sarsa', True)]
@@ -122,9 +133,8 @@ def run_grid(World: GridWorldEnv, tabular=True):
             agent = TabularGWAgent(grid_size=env.grid_size,
                                    training=True, value_target=m, online=online, lr=0.5)
         else:
-            input_c = env.grid_size[0]*env.grid_size[1]
-            agent = LinearGWAgent(input_c=input_c, grid_size=env.grid_size, training=True,
-                                  value_target=m, online=online, lr=0.001)
+            agent = LinearGWAgent(grid_size=env.grid_size, training=True,
+                                  value_target=m, online=True, lr=0.0005)
         print(agent)
         env.set_agent(agent)
         rec_payoff = []
@@ -151,7 +161,7 @@ def run_grid(World: GridWorldEnv, tabular=True):
 
             rec_payoff.append(payoff)
 
-        agent.save_model()
+        # agent.save_model()
         """
         training results
         """
@@ -204,5 +214,13 @@ if __name__ == '__main__':
     """
     random.seed(0)
     from env import WindyGridWorldEnv, CliffWalkingEnv
-    run_grid(WindyGridWorldEnv(), tabular=False)
-    run_grid(CliffWalkingEnv(), tabular=False)
+
+    # tabular methods
+    run_grid(WindyGridWorldEnv(), tabular=True, max_len=10000, N_episodes=100)
+    run_grid(CliffWalkingEnv(), tabular=True, max_len=100, N_episodes=2000)
+
+    # approximation methods
+    # approx-sarsa is similar to tabular-sarsa, but approx-Q is slower than tabular-Q
+    # require high-representable-power model (e.g. hidden-dim=128)
+    run_grid(WindyGridWorldEnv(), tabular=False, max_len=10000, N_episodes=100)
+    run_grid(CliffWalkingEnv(), tabular=False, max_len=100, N_episodes=2000)
