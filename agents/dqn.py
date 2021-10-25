@@ -102,8 +102,6 @@ class DQNAgent(BaseAgent):
         if len(self.rb) < self.batch_size:
             return
 
-        self.policy_model.train()
-
         opt = torch.optim.RMSprop(self.policy_model.parameters(), lr=self.lr, eps=self.eps)
 
         logger.debug(
@@ -115,9 +113,15 @@ class DQNAgent(BaseAgent):
 
         if self.target_type == 'TD':
             # TD target
+            self.policy_model.eval()
             with torch.no_grad():
-                r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
+                # double-DQN
+                acts = self.policy_model(n_o.to(device)).argmax(dim=-1)
+                r += self.gamma * self.target_model(n_o.to(device))[range(r.size(0)), acts].cpu()
+                # normal DQN
+                # r += self.gamma * self.target_model(n_o.to(device)).max(dim=1).values.detach().cpu()
 
+        self.policy_model.train()
         q_ = self.policy_model(o.to(device))  # policy model on the current state!
 
         opt.zero_grad()
