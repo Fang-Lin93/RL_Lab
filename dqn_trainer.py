@@ -95,7 +95,7 @@ def main():
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
-                      input_c=env.observation_space.shape[0]+1)
+                      input_c=env.observation_space.shape[0])
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
@@ -131,7 +131,8 @@ def main():
         obs = env.reset()
         t, score = 0, 0
 
-        history = deque([obs.tolist()+[t/max_len]], maxlen=config['history_len'])
+        # history = deque([obs.tolist()+[t/max_len]], maxlen=config['history_len'])
+        history = deque([obs], maxlen=config['history_len'])
 
         # anneal epsilon greedy
         agent.eps_greedy = max(config['eps_greedy'], 1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
@@ -147,7 +148,8 @@ def main():
             obs, r_, _, _ = env.step(random.choice(la))  # force game start !
             score += r_
             t += 1
-            history.append(obs.tolist()+[t/max_len])
+            # history.append(obs.tolist()+[t/max_len])
+            history.append(obs)
 
         while True:
             step += 1
@@ -155,7 +157,8 @@ def main():
             action = agent.act(state_dict)
             obs, reward, done, info = env.step(action)
             t += 1
-            history.append(obs.tolist()+[t/max_len])
+            # history.append(obs.tolist()+[t/max_len])
+            history.append(obs)
 
             state_dict = {
                 'obs': history,

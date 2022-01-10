@@ -44,7 +44,7 @@ parser.add_argument('--critic_targets', default='td', type=str, help=' mc or td'
 # parser.add_argument('--frame_freq', default=3, type=int, help='act every ? frame')
 
 # game
-parser.add_argument('--game', default='CartPole-v0', type=str, help='game env name')
+parser.add_argument('--game', default='Breakout-v0', type=str, help='game env name')
 parser.add_argument('--disable_byte_norm', action='store_true')
 parser.add_argument('--input_rgb', action='store_true')
 parser.add_argument('--human', action='store_true')  # default='rgb_array'
@@ -81,7 +81,7 @@ def main():
         config = args.__dict__
         env = gym.make(args.game)
         config.update(n_act=env.action_space.n,
-                      input_c=env.observation_space.shape[0]+1)
+                      input_c=env.observation_space.shape[0])
         for k, v in config.items():
             logger.info(f'{k}={v}')
 
@@ -117,7 +117,8 @@ def main():
         logger.info(f'Epoch={episode}, already finished step={step}')
         obs = env.reset()
         t, score = 0, 0
-        history = deque([obs.tolist() + [t/max_len]], maxlen=config['history_len'])
+        # history = deque([obs.tolist() + [t/max_len]], maxlen=config['history_len'])  # for vec feature only
+        history = deque([obs], maxlen=config['history_len'])  # for vec feature only
         # anneal epsilon greedy
         agent.eps_greedy = max(config['eps_greedy'], 1 - episode * (1 - config['eps_greedy']) / config['explore_step'])
 
@@ -133,7 +134,8 @@ def main():
             obs, r_, _, _ = env.step(random.choice(la))  # force game start !
             t += 1
             score += r_
-            history.append(obs.tolist() + [t/max_len])
+            # history.append(obs.tolist() + [t/max_len])
+            history.append(obs)
 
         while True:
             step += 1
@@ -141,7 +143,8 @@ def main():
             action = agent.act(state_dict)
             obs, reward, done, info = env.step(action)
             t += 1
-            history.append(obs.tolist() + [t/max_len])
+            # history.append(obs.tolist() + [t/max_len])
+            history.append(obs)
 
             state_dict = {
                 'obs': history,

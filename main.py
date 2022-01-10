@@ -19,7 +19,7 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 frame_freq = 1
 history_len = 5
 
-env = gym.make('CartPole-v0')  # 'SpaceInvaders-v0'
+env = gym.make('Breakout-v0')  # 'SpaceInvaders-v0'
 target = 'TD'
 # env = gym.make('Breakout-v0')
 agent = PGAgent(critic='q',
